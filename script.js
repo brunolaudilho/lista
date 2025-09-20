@@ -966,12 +966,12 @@ async function carregarDados() {
 
 // === FUNÇÕES DE UPLOAD EXCEL ===
 
-function processarExcel(event) {
+async function processarExcel(event) {
     const file = event.target.files[0];
     if (!file) return;
     
     const reader = new FileReader();
-    reader.onload = function(e) {
+    reader.onload = async function(e) {
         try {
             const data = new Uint8Array(e.target.result);
             const workbook = XLSX.read(data, { type: 'array' });
@@ -986,43 +986,176 @@ function processarExcel(event) {
             // Processar dados
             let adicionados = 0;
             let duplicados = 0;
+            let errosSupabase = 0;
             
-            jsonData.forEach((row, index) => {
+            // Mostrar progresso
+            const progressDiv = document.createElement('div');
+            progressDiv.innerHTML = `
+                <div style="position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); 
+                           background: white; padding: 20px; border-radius: 10px; box-shadow: 0 4px 20px rgba(0,0,0,0.3); 
+                           z-index: 10000; text-align: center;">
+                    <h3>📊 Processando Excel...</h3>
+                    <div id="progress-text">Iniciando...</div>
+                    <div style="width: 300px; height: 20px; background: #f0f0f0; border-radius: 10px; margin: 10px 0;">
+                        <div id="progress-bar" style="width: 0%; height: 100%; background: #007bff; border-radius: 10px; transition: width 0.3s;"></div>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(progressDiv);
+            
+            const updateProgress = (current, total, text) => {
+                const percent = Math.round((current / total) * 100);
+                document.getElementById('progress-text').textContent = text;
+                document.getElementById('progress-bar').style.width = percent + '%';
+            };
+            
+            for (let index = 0; index < jsonData.length; index++) {
+                const row = jsonData[index];
+                
                 // Pular linha de cabeçalho se existir
-                if (index === 0 && (row[0] === 'Nome' || row[0] === 'Nome Completo')) return;
+                if (index === 0 && (row[0] === 'Nome' || row[0] === 'Nome Completo')) continue;
                 
                 const nome = row[0] ? row[0].toString().trim() : '';
                 const departamento = row[1] ? row[1].toString().trim() : 'Não informado';
                 
+                updateProgress(index + 1, jsonData.length, `Processando: ${nome || 'linha ' + (index + 1)}`);
+                
                 if (nome && nome !== '') {
-                    // Verificar se já existe
-                    if (!participantes.find(p => p.nome.toLowerCase() === nome.toLowerCase())) {
-                        const participante = {
-                            id: Date.now() + Math.random(),
-                            nome: nome,
-                            departamento: departamento,
-                            presente: false,
-                            horarioCheckIn: null
-                        };
-                        
-                        participantes.push(participante);
-                        adicionados++;
+                    // Verificar se já existe (local)
+                    const existeLocal = participantes.find(p => 
+                        (p.nome?.toLowerCase() === nome.toLowerCase()) || 
+                        (p.name?.toLowerCase() === nome.toLowerCase())
+                    );
+                    
+                    if (!existeLocal) {
+                        try {
+                            if (isSupabaseReady) {
+                                // Usar inserção em lote se houver múltiplos participantes
+                                const participantesToAdd = [];
+                                
+                                // Coletar todos os participantes válidos primeiro
+                                for (let i = index; i < jsonData.length; i++) {
+                                    const currentRow = jsonData[i];
+                                    if (i === 0 && (currentRow[0] === 'Nome' || currentRow[0] === 'Nome Completo')) continue;
+                                    
+                                    const currentNome = currentRow[0] ? currentRow[0].toString().trim() : '';
+                                    const currentDepartamento = currentRow[1] ? currentRow[1].toString().trim() : 'Não informado';
+                                    
+                                    if (currentNome && currentNome !== '') {
+                                        const existeLocal = participantes.find(p => 
+                                            (p.nome?.toLowerCase() === currentNome.toLowerCase()) || 
+                                            (p.name?.toLowerCase() === currentNome.toLowerCase())
+                                        );
+                                        
+                                        if (!existeLocal) {
+                                            participantesToAdd.push({
+                                                name: currentNome,
+                                                department: currentDepartamento
+                                            });
+                                        }
+                                    }
+                                }
+                                
+                                if (participantesToAdd.length > 0) {
+                                    // Usar inserção em lote
+                                    const novosParticipantes = await window.supabaseService.addParticipants(participantesToAdd);
+                                    
+                                    // Converter formato Supabase para formato local
+                                    novosParticipantes.forEach(novoParticipante => {
+                                        const participanteLocal = {
+                                            id: novoParticipante.id,
+                                            nome: novoParticipante.name,
+                                            departamento: novoParticipante.department || 'Não informado',
+                                            presente: novoParticipante.present,
+                                            horarioCheckIn: novoParticipante.arrival_time ? new Date(novoParticipante.arrival_time).toLocaleTimeString() : null
+                                        };
+                                        
+                                        participantes.push(participanteLocal);
+                                        adicionados++;
+                                    });
+                                    
+                                    // Pular para o final do loop já que processamos todos
+                                    index = jsonData.length;
+                                    updateProgress(jsonData.length, jsonData.length, 'Concluído!');
+                                } else {
+                                    // Usar método individual como fallback
+                                    const novoParticipante = await window.supabaseService.addParticipant(nome, departamento);
+                                    
+                                    const participanteLocal = {
+                                        id: novoParticipante.id,
+                                        nome: novoParticipante.name,
+                                        departamento: novoParticipante.department || 'Não informado',
+                                        presente: novoParticipante.present,
+                                        horarioCheckIn: novoParticipante.arrival_time ? new Date(novoParticipante.arrival_time).toLocaleTimeString() : null
+                                    };
+                                    
+                                    participantes.push(participanteLocal);
+                                    adicionados++;
+                                }
+                            } else {
+                                // Fallback para localStorage
+                                const participante = {
+                                    id: Date.now() + Math.random(),
+                                    nome: nome,
+                                    departamento: departamento,
+                                    presente: false,
+                                    horarioCheckIn: null
+                                };
+                                
+                                participantes.push(participante);
+                                adicionados++;
+                            }
+                        } catch (error) {
+                            console.error('Erro ao adicionar participante via Supabase:', nome, error);
+                            errosSupabase++;
+                            
+                            // Fallback para localStorage em caso de erro
+                            const participante = {
+                                id: Date.now() + Math.random(),
+                                nome: nome,
+                                departamento: departamento,
+                                presente: false,
+                                horarioCheckIn: null
+                            };
+                            
+                            participantes.push(participante);
+                            adicionados++;
+                        }
                     } else {
                         duplicados++;
                     }
                 }
-            });
+                
+                // Pequena pausa para não sobrecarregar
+                if (index % 10 === 0) {
+                    await new Promise(resolve => setTimeout(resolve, 50));
+                }
+            }
+            
+            // Remover indicador de progresso
+            document.body.removeChild(progressDiv);
             
             // Atualizar interface
             atualizarListaParticipantes();
             atualizarIndicadorPresenca();
-            salvarDados();
+            
+            if (!isSupabaseReady) {
+                salvarDados(); // Salvar no localStorage se não estiver usando Supabase
+            }
             
             // Mostrar resultado
-            let mensagem = `Upload concluído!\n`;
-            mensagem += `Participantes adicionados: ${adicionados}\n`;
+            let mensagem = `📊 Upload concluído!\n\n`;
+            mensagem += `✅ Participantes adicionados: ${adicionados}\n`;
             if (duplicados > 0) {
-                mensagem += `Participantes duplicados (ignorados): ${duplicados}`;
+                mensagem += `⚠️ Participantes duplicados (ignorados): ${duplicados}\n`;
+            }
+            if (errosSupabase > 0) {
+                mensagem += `❌ Erros no Supabase (salvos localmente): ${errosSupabase}\n`;
+            }
+            if (isSupabaseReady) {
+                mensagem += `\n🔄 Dados sincronizados com Supabase!`;
+            } else {
+                mensagem += `\n💾 Dados salvos localmente (Supabase indisponível)`;
             }
             
             alert(mensagem);
@@ -1031,8 +1164,14 @@ function processarExcel(event) {
             event.target.value = '';
             
         } catch (error) {
+            // Remover indicador de progresso em caso de erro
+            const progressDiv = document.querySelector('div[style*="position: fixed"]');
+            if (progressDiv) {
+                document.body.removeChild(progressDiv);
+            }
+            
             console.error('Erro ao processar Excel:', error);
-            alert('Erro ao processar o arquivo Excel. Verifique se o formato está correto.');
+            alert('❌ Erro ao processar o arquivo Excel. Verifique se o formato está correto.\n\nDetalhes: ' + error.message);
         }
     };
     

@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Teste Supabase - Lista de Convidados</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .test-section {
+            margin: 20px 0;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        .success { background: #d4edda; border-color: #c3e6cb; }
+        .error { background: #f8d7da; border-color: #f5c6cb; }
+        .info { background: #d1ecf1; border-color: #bee5eb; }
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover { background: #0056b3; }
+        #results { margin-top: 20px; }
+        .log { 
+            background: #f8f9fa; 
+            padding: 10px; 
+            margin: 5px 0; 
+            border-radius: 3px; 
+            font-family: monospace;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🧪 Teste de Conexão Supabase</h1>
+        <p>Esta página testa a conexão com o Supabase e identifica problemas.</p>
+        
+        <div class="test-section info">
+            <h3>📋 Testes Disponíveis:</h3>
+            <button onclick="testConnection()">1. Testar Conexão</button>
+            <button onclick="testInsert()">2. Testar Inserção</button>
+            <button onclick="testSelect()">3. Testar Consulta</button>
+            <button onclick="clearResults()">Limpar Resultados</button>
+        </div>
+        
+        <div id="results"></div>
+    </div>
+
+    <!-- Carregar Supabase -->
+    <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+    <script src="supabase-config.js"></script>
+    <script src="supabase-service.js"></script>
+
+    <script>
+        function log(message, type = 'info') {
+            const results = document.getElementById('results');
+            const logDiv = document.createElement('div');
+            logDiv.className = `log ${type}`;
+            logDiv.innerHTML = `[${new Date().toLocaleTimeString()}] ${message}`;
+            results.appendChild(logDiv);
+            console.log(message);
+        }
+
+        function clearResults() {
+            document.getElementById('results').innerHTML = '';
+        }
+
+        async function testConnection() {
+            log('🔄 Testando conexão com Supabase...', 'info');
+            
+            try {
+                // Verificar se o cliente existe
+                if (!window.supabaseClient) {
+                    log('❌ Cliente Supabase não encontrado!', 'error');
+                    return;
+                }
+                
+                log('✅ Cliente Supabase carregado', 'success');
+                
+                // Testar conexão básica
+                const { data, error } = await window.supabaseClient
+                    .from('participants')
+                    .select('count', { count: 'exact', head: true });
+                
+                if (error) {
+                    log(`❌ Erro na conexão: ${error.message}`, 'error');
+                    log(`Detalhes: ${JSON.stringify(error, null, 2)}`, 'error');
+                } else {
+                    log('✅ Conexão com Supabase estabelecida!', 'success');
+                    log(`📊 Tabela 'participants' acessível`, 'success');
+                }
+                
+            } catch (err) {
+                log(`❌ Erro inesperado: ${err.message}`, 'error');
+                console.error('Erro completo:', err);
+            }
+        }
+
+        async function testInsert() {
+            log('🔄 Testando inserção de dados...', 'info');
+            
+            try {
+                const testName = `Teste ${Date.now()}`;
+                const testDept = 'Departamento Teste';
+                
+                const { data, error } = await window.supabaseClient
+                    .from('participants')
+                    .insert([
+                        {
+                            name: testName,
+                            department: testDept,
+                            present: false,
+                            created_at: new Date().toISOString()
+                        }
+                    ])
+                    .select();
+                
+                if (error) {
+                    log(`❌ Erro na inserção: ${error.message}`, 'error');
+                    log(`Código: ${error.code}`, 'error');
+                    log(`Detalhes: ${JSON.stringify(error, null, 2)}`, 'error');
+                } else {
+                    log('✅ Inserção realizada com sucesso!', 'success');
+                    log(`📝 Dados inseridos: ${JSON.stringify(data[0], null, 2)}`, 'success');
+                }
+                
+            } catch (err) {
+                log(`❌ Erro inesperado na inserção: ${err.message}`, 'error');
+                console.error('Erro completo:', err);
+            }
+        }
+
+        async function testSelect() {
+            log('🔄 Testando consulta de dados...', 'info');
+            
+            try {
+                const { data, error } = await window.supabaseClient
+                    .from('participants')
+                    .select('*')
+                    .limit(5);
+                
+                if (error) {
+                    log(`❌ Erro na consulta: ${error.message}`, 'error');
+                    log(`Detalhes: ${JSON.stringify(error, null, 2)}`, 'error');
+                } else {
+                    log('✅ Consulta realizada com sucesso!', 'success');
+                    log(`📊 ${data.length} registros encontrados`, 'success');
+                    
+                    if (data.length > 0) {
+                        log(`📋 Primeiro registro: ${JSON.stringify(data[0], null, 2)}`, 'info');
+                    }
+                }
+                
+            } catch (err) {
+                log(`❌ Erro inesperado na consulta: ${err.message}`, 'error');
+                console.error('Erro completo:', err);
+            }
+        }
+
+        // Executar teste básico ao carregar
+        window.addEventListener('load', () => {
+            setTimeout(() => {
+                log('🚀 Página de teste carregada', 'info');
+                testConnection();
+            }, 1000);
+        });
+    </script>
+</body>
+</html>

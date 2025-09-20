@@ -50,6 +50,32 @@ class SupabaseService {
         }
     }
 
+    async addParticipants(participants) {
+        try {
+            if (!Array.isArray(participants) || participants.length === 0) {
+                throw new Error('Lista de participantes deve ser um array não vazio');
+            }
+
+            const participantsData = participants.map(participant => ({
+                name: participant.name.trim(),
+                department: participant.department ? participant.department.trim() : '',
+                present: false,
+                created_at: new Date().toISOString()
+            }));
+
+            const { data, error } = await this.client
+                .from(this.config.PARTICIPANTS_TABLE)
+                .insert(participantsData)
+                .select();
+
+            if (error) throw error;
+            return data;
+        } catch (error) {
+            console.error('Erro ao adicionar participantes em lote:', error);
+            throw error;
+        }
+    }
+
     async updateParticipantPresence(id, present) {
         try {
             const updateData = {
@@ -80,30 +106,155 @@ class SupabaseService {
 
     async removeParticipant(id) {
         try {
-            const { error } = await this.client
+            console.log(`🔄 Removendo participante ${id} do Supabase...`);
+            const { data, error } = await this.client
                 .from(this.config.PARTICIPANTS_TABLE)
                 .delete()
                 .eq('id', id);
 
-            if (error) throw error;
+            if (error) {
+                console.error(`❌ Erro ao remover participante ${id}:`, error);
+                throw error;
+            }
+            
+            console.log(`✅ Participante ${id} removido do Supabase:`, data);
             return true;
         } catch (error) {
-            console.error('Erro ao remover participante:', error);
+            console.error(`💥 Erro ao remover participante ${id}:`, error);
             throw error;
         }
     }
 
     async clearAllParticipants() {
         try {
-            const { error } = await this.client
+            console.log('🔄 Deletando todos os participantes do Supabase...');
+            
+            // Primeiro, vamos tentar deletar usando gt(id, -1) que pega todos os registros
+            const { data, error } = await this.client
                 .from(this.config.PARTICIPANTS_TABLE)
                 .delete()
-                .neq('id', 0); // Remove todos os registros
+                .gt('id', -1); // Deleta todos os registros onde id > -1 (todos)
 
-            if (error) throw error;
+            if (error) {
+                console.error('❌ Erro ao limpar participantes:', error);
+                // Se der erro, vamos tentar uma abordagem diferente
+                console.log('🔄 Tentando abordagem alternativa...');
+                
+                // Primeiro buscar todos os IDs
+                const { data: allParticipants, error: selectError } = await this.client
+                    .from(this.config.PARTICIPANTS_TABLE)
+                    .select('id');
+                
+                if (selectError) {
+                    console.error('❌ Erro ao buscar participantes:', selectError);
+                    throw selectError;
+                }
+                
+                if (allParticipants && allParticipants.length > 0) {
+                    console.log(`🔄 Encontrados ${allParticipants.length} participantes para deletar`);
+                    
+                    // Deletar cada um individualmente
+                    for (const participant of allParticipants) {
+                        const { error: deleteError } = await this.client
+                            .from(this.config.PARTICIPANTS_TABLE)
+                            .delete()
+                            .eq('id', participant.id);
+                        
+                        if (deleteError) {
+                            console.error(`❌ Erro ao deletar participante ${participant.id}:`, deleteError);
+                        } else {
+                            console.log(`✅ Participante ${participant.id} deletado`);
+                        }
+                    }
+                }
+                
+                return true;
+            }
+            
+            console.log('✅ Participantes deletados do Supabase:', data);
             return true;
         } catch (error) {
-            console.error('Erro ao limpar participantes:', error);
+            console.error('💥 Erro ao limpar participantes:', error);
+            throw error;
+        }
+    }
+
+    async clearAllData() {
+        try {
+            console.log('🧹 Iniciando limpeza completa dos dados...');
+            
+            // Limpar participantes
+            console.log('🔄 Limpando participantes...');
+            await this.clearAllParticipants();
+            console.log('✅ Participantes limpos');
+            
+            // Limpar pesquisas
+            console.log('🔄 Limpando pesquisas...');
+            try {
+                const { data: surveysData, error: surveysError } = await this.client
+                    .from(this.config.SURVEYS_TABLE)
+                    .delete()
+                    .gt('id', -1); // Deleta todos onde id > -1
+
+                if (surveysError) {
+                    console.error('❌ Erro ao limpar pesquisas:', surveysError);
+                    // Tentar abordagem alternativa para pesquisas
+                    const { data: allSurveys, error: selectError } = await this.client
+                        .from(this.config.SURVEYS_TABLE)
+                        .select('id');
+                    
+                    if (!selectError && allSurveys && allSurveys.length > 0) {
+                        console.log(`🔄 Deletando ${allSurveys.length} pesquisas individualmente...`);
+                        for (const survey of allSurveys) {
+                            await this.client
+                                .from(this.config.SURVEYS_TABLE)
+                                .delete()
+                                .eq('id', survey.id);
+                        }
+                    }
+                } else {
+                    console.log('✅ Pesquisas limpas:', surveysData);
+                }
+            } catch (surveyError) {
+                console.warn('⚠️ Aviso ao limpar pesquisas:', surveyError);
+            }
+
+            // Limpar grupos (se existir tabela)
+            console.log('🔄 Limpando grupos...');
+            try {
+                const { data: groupsData, error: groupsError } = await this.client
+                    .from('groups')
+                    .delete()
+                    .gt('id', -1); // Deleta todos onde id > -1
+                
+                // Ignorar erro se tabela não existir
+                if (groupsError && !groupsError.message.includes('does not exist')) {
+                    console.error('❌ Erro ao limpar grupos:', groupsError);
+                    // Tentar abordagem alternativa para grupos
+                    const { data: allGroups, error: selectError } = await this.client
+                        .from('groups')
+                        .select('id');
+                    
+                    if (!selectError && allGroups && allGroups.length > 0) {
+                        console.log(`🔄 Deletando ${allGroups.length} grupos individualmente...`);
+                        for (const group of allGroups) {
+                            await this.client
+                                .from('groups')
+                                .delete()
+                                .eq('id', group.id);
+                        }
+                    }
+                } else {
+                    console.log('✅ Grupos limpos:', groupsData);
+                }
+            } catch (groupsError) {
+                console.warn('⚠️ Aviso ao limpar grupos:', groupsError);
+            }
+
+            console.log('🎉 Limpeza completa finalizada com sucesso!');
+            return true;
+        } catch (error) {
+            console.error('💥 Erro ao limpar todos os dados:', error);
             throw error;
         }
     }
