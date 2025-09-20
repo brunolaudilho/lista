@@ -4,13 +4,90 @@ let pesquisas = [];
 let npsChart = null;
 let qualidadeChart = null;
 let instrutorChart = null;
+let isSupabaseReady = false;
 
 // Inicialização
 document.addEventListener('DOMContentLoaded', function() {
-    carregarDados();
-    configurarNPS();
-    configurarFormularioPesquisa();
+    // Função assíncrona para inicialização
+    async function inicializar() {
+        try {
+            // Inicializar Supabase primeiro
+            await initializeSupabase();
+            
+            // Configurar listener de autenticação
+            await setupAuthListener();
+            
+            // Carregar dados
+            await carregarDados();
+            
+            // Verificar login admin
+            await verificarLoginAdmin();
+            
+            // Configurar módulos
+            configurarNPS();
+            configurarFormularioPesquisa();
+            
+            // Configurar eventos de teclado
+            const nomeInput = document.getElementById('nome-participante');
+            const deptoInput = document.getElementById('depto-participante');
+            
+            if (nomeInput) {
+                nomeInput.addEventListener('keypress', function(e) {
+                    if (e.key === 'Enter') {
+                        adicionarParticipante();
+                    }
+                });
+            }
+            
+            if (deptoInput) {
+                deptoInput.addEventListener('keypress', function(e) {
+                    if (e.key === 'Enter') {
+                        adicionarParticipante();
+                    }
+                });
+            }
+            
+            // Configurar upload de imagem
+            configurarUploadImagem();
+        } catch (error) {
+            console.error('Erro na inicialização:', error);
+        }
+    }
+    
+    // Executar inicialização
+    inicializar();
 });
+
+// Função para inicializar Supabase
+async function initializeSupabase() {
+    try {
+        if (window.supabaseService) {
+            const connected = await window.supabaseService.testConnection();
+            if (connected) {
+                console.log('✅ Supabase conectado com sucesso!');
+                isSupabaseReady = true;
+                
+                // Verificar se há dados no localStorage para migrar
+                const localData = localStorage.getItem('sistemaPresenca');
+                if (localData && JSON.parse(localData).participantes?.length > 0) {
+                    const migrate = confirm('Foram encontrados dados locais. Deseja migrar para o Supabase?');
+                    if (migrate) {
+                        await window.supabaseService.syncFromLocalStorage();
+                        // Limpar localStorage após migração
+                        localStorage.removeItem('sistemaPresenca');
+                        alert('Dados migrados com sucesso para o Supabase!');
+                    }
+                }
+            } else {
+                console.warn('⚠️ Supabase não conectado, usando localStorage como fallback');
+                isSupabaseReady = false;
+            }
+        }
+    } catch (error) {
+        console.error('❌ Erro ao inicializar Supabase:', error);
+        isSupabaseReady = false;
+    }
+}
 
 // Navegação entre módulos
 function showModule(moduleId) {
@@ -31,7 +108,7 @@ function showModule(moduleId) {
 
 // === MÓDULO LISTA DE PRESENÇA ===
 
-function adicionarParticipante() {
+async function adicionarParticipante() {
     const nomeInput = document.getElementById('nome-participante');
     const deptoInput = document.getElementById('depto-participante');
     const nome = nomeInput.value.trim();
@@ -43,46 +120,111 @@ function adicionarParticipante() {
     }
     
     // Verificar se já existe
-    if (participantes.find(p => p.nome.toLowerCase() === nome.toLowerCase())) {
+    if (participantes.find(p => p.nome?.toLowerCase() === nome.toLowerCase() || p.name?.toLowerCase() === nome.toLowerCase())) {
         alert('Este participante já está na lista.');
         return;
     }
     
-    const participante = {
-        id: Date.now(),
-        nome: nome,
-        departamento: depto || 'Não informado',
-        presente: false,
-        horarioCheckIn: null
-    };
-    
-    participantes.push(participante);
-    nomeInput.value = '';
-    deptoInput.value = '';
-    
-    atualizarListaParticipantes();
-    atualizarIndicadorPresenca();
-    salvarDados();
-}
-
-function togglePresenca(id) {
-    const participante = participantes.find(p => p.id === id);
-    if (participante) {
-        participante.presente = !participante.presente;
-        participante.horarioCheckIn = participante.presente ? new Date().toLocaleTimeString() : null;
+    try {
+        if (isSupabaseReady) {
+            // Usar Supabase
+            const novoParticipante = await window.supabaseService.addParticipant(nome, depto);
+            
+            // Converter formato Supabase para formato local
+            const participanteLocal = {
+                id: novoParticipante.id,
+                nome: novoParticipante.name,
+                departamento: novoParticipante.department || 'Não informado',
+                presente: novoParticipante.present,
+                horarioCheckIn: novoParticipante.arrival_time ? new Date(novoParticipante.arrival_time).toLocaleTimeString() : null
+            };
+            
+            participantes.push(participanteLocal);
+        } else {
+            // Fallback para localStorage
+            const participante = {
+                id: Date.now(),
+                nome: nome,
+                departamento: depto || 'Não informado',
+                presente: false,
+                horarioCheckIn: null
+            };
+            
+            participantes.push(participante);
+        }
+        
+        nomeInput.value = '';
+        deptoInput.value = '';
         
         atualizarListaParticipantes();
         atualizarIndicadorPresenca();
-        salvarDados();
+        
+        if (!isSupabaseReady) {
+            salvarDados();
+        }
+        
+    } catch (error) {
+        console.error('Erro ao adicionar participante:', error);
+        alert('Erro ao adicionar participante. Tente novamente.');
     }
 }
 
-function removerParticipante(id) {
+async function togglePresenca(id) {
+    const participante = participantes.find(p => p.id === id);
+    if (participante) {
+        const novoStatus = !participante.presente;
+        
+        try {
+            if (isSupabaseReady) {
+                // Atualizar no Supabase
+                const participanteAtualizado = await window.supabaseService.updateParticipantPresence(id, novoStatus);
+                
+                // Atualizar dados locais
+                participante.presente = participanteAtualizado.present;
+                participante.horarioCheckIn = participanteAtualizado.arrival_time ? 
+                    new Date(participanteAtualizado.arrival_time).toLocaleTimeString() : null;
+            } else {
+                // Fallback para localStorage
+                participante.presente = novoStatus;
+                participante.horarioCheckIn = novoStatus ? new Date().toLocaleTimeString() : null;
+            }
+            
+            atualizarListaParticipantes();
+            atualizarIndicadorPresenca();
+            
+            if (!isSupabaseReady) {
+                salvarDados();
+            }
+            
+        } catch (error) {
+            console.error('Erro ao atualizar presença:', error);
+            alert('Erro ao atualizar presença. Tente novamente.');
+        }
+    }
+}
+
+async function removerParticipante(id) {
     if (confirm('Tem certeza que deseja remover este participante?')) {
-        participantes = participantes.filter(p => p.id !== id);
-        atualizarListaParticipantes();
-        atualizarIndicadorPresenca();
-        salvarDados();
+        try {
+            if (isSupabaseReady) {
+                // Remover do Supabase
+                await window.supabaseService.removeParticipant(id);
+            }
+            
+            // Remover dos dados locais
+            participantes = participantes.filter(p => p.id !== id);
+            
+            atualizarListaParticipantes();
+            atualizarIndicadorPresenca();
+            
+            if (!isSupabaseReady) {
+                salvarDados();
+            }
+            
+        } catch (error) {
+            console.error('Erro ao remover participante:', error);
+            alert('Erro ao remover participante. Tente novamente.');
+        }
     }
 }
 
@@ -285,7 +427,7 @@ function configurarNPS() {
 function configurarFormularioPesquisa() {
     const form = document.getElementById('form-pesquisa');
     
-    form.addEventListener('submit', function(e) {
+    form.addEventListener('submit', async function(e) {
         e.preventDefault();
         
         const npsScore = document.getElementById('nps-score').value;
@@ -295,26 +437,59 @@ function configurarFormularioPesquisa() {
             return;
         }
         
-        const pesquisa = {
-            id: Date.now(),
-            nps: parseInt(npsScore),
-            qualidade: document.getElementById('qualidade').value,
-            instrutor: document.getElementById('instrutor').value,
-            comentarios: document.getElementById('comentarios').value,
-            timestamp: new Date().toLocaleString()
-        };
-        
-        pesquisas.push(pesquisa);
-        salvarDados();
-        
-        // Resetar formulário
-        form.reset();
-        document.querySelectorAll('.nps-btn').forEach(btn => btn.classList.remove('selected'));
-        
-        // Atualizar resultados
-        atualizarResultadosPesquisa();
-        
-        alert('Pesquisa enviada com sucesso! Obrigado pelo seu feedback.');
+        try {
+            const pesquisa = {
+                id: Date.now(),
+                nps: parseInt(npsScore),
+                qualidade: document.getElementById('qualidade').value,
+                instrutor: document.getElementById('instrutor').value,
+                comentarios: document.getElementById('comentarios').value,
+                timestamp: new Date().toLocaleString()
+            };
+            
+            if (isSupabaseReady) {
+                // Salvar no Supabase
+                const novaPesquisa = await window.supabaseService.addSurvey(
+                    'Participante Anônimo', // Nome do participante
+                    parseInt(npsScore),
+                    document.getElementById('qualidade').value,
+                    document.getElementById('instrutor').value,
+                    document.getElementById('comentarios').value
+                );
+                
+                // Converter formato Supabase para formato local
+                const pesquisaLocal = {
+                    participantName: novaPesquisa.participant_name,
+                    npsScore: novaPesquisa.nps_score,
+                    qualityRating: novaPesquisa.quality_rating,
+                    instructorRating: novaPesquisa.instructor_rating,
+                    comments: novaPesquisa.comments,
+                    timestamp: novaPesquisa.created_at
+                };
+                
+                pesquisas.push(pesquisaLocal);
+            } else {
+                // Fallback para localStorage
+                pesquisas.push(pesquisa);
+            }
+            
+            // Resetar formulário
+            form.reset();
+            document.querySelectorAll('.nps-btn').forEach(btn => btn.classList.remove('selected'));
+            
+            // Atualizar resultados
+            atualizarResultadosPesquisa();
+            
+            if (!isSupabaseReady) {
+                salvarDados();
+            }
+            
+            alert('Pesquisa enviada com sucesso! Obrigado pelo seu feedback.');
+            
+        } catch (error) {
+            console.error('Erro ao salvar pesquisa:', error);
+            alert('Erro ao salvar pesquisa. Tente novamente.');
+        }
     });
 }
 
@@ -564,6 +739,12 @@ function limparRespostasPesquisa() {
 // === PERSISTÊNCIA DE DADOS ===
 
 function salvarDados() {
+    if (isSupabaseReady) {
+        // Dados já são salvos automaticamente no Supabase
+        return;
+    }
+    
+    // Fallback para localStorage
     const dados = {
         participantes: participantes,
         pesquisas: pesquisas
@@ -709,49 +890,79 @@ function limparPesquisa() {
     }
 }
 
-function carregarDados() {
-    const dados = localStorage.getItem('sistemaPresenca');
-    
-    if (dados) {
-        const dadosParseados = JSON.parse(dados);
-        participantes = dadosParseados.participantes || [];
-        pesquisas = dadosParseados.pesquisas || [];
+async function carregarDados() {
+    try {
+        if (isSupabaseReady) {
+            // Carregar do Supabase
+            const participantesSupabase = await window.supabaseService.getParticipants();
+            const pesquisasSupabase = await window.supabaseService.getSurveys();
+            
+            // Converter formato Supabase para formato local
+            participantes = participantesSupabase.map(p => ({
+                id: p.id,
+                nome: p.name,
+                departamento: p.department || 'Não informado',
+                presente: p.present,
+                horarioCheckIn: p.arrival_time ? new Date(p.arrival_time).toLocaleTimeString() : null
+            }));
+            
+            pesquisas = pesquisasSupabase.map(s => ({
+                participantName: s.participant_name,
+                nps: s.nps_score,
+                qualidade: s.quality_rating,
+                instrutor: s.instructor_rating,
+                comentarios: s.comments || ''
+            }));
+            
+            console.log('✅ Dados carregados do Supabase');
+        } else {
+            // Carregar do localStorage
+            const dadosParticipantes = localStorage.getItem('participantes');
+            const dadosPesquisas = localStorage.getItem('pesquisas');
+            
+            if (dadosParticipantes) {
+                participantes = JSON.parse(dadosParticipantes);
+            }
+            
+            if (dadosPesquisas) {
+                pesquisas = JSON.parse(dadosPesquisas);
+            }
+            
+            console.log('📦 Dados carregados do localStorage');
+        }
+        
+        // Atualizar interface
+        atualizarListaParticipantes();
+        atualizarIndicadorPresenca();
+        atualizarResultadosPesquisa();
+        carregarImagemCapa();
+        
+    } catch (error) {
+        console.error('Erro ao carregar dados:', error);
+        
+        // Fallback para localStorage em caso de erro
+        const dadosParticipantes = localStorage.getItem('participantes');
+        const dadosPesquisas = localStorage.getItem('pesquisas');
+        
+        if (dadosParticipantes) {
+            participantes = JSON.parse(dadosParticipantes);
+        }
+        
+        if (dadosPesquisas) {
+            pesquisas = JSON.parse(dadosPesquisas);
+        }
         
         atualizarListaParticipantes();
         atualizarIndicadorPresenca();
         atualizarResultadosPesquisa();
+        carregarImagemCapa();
     }
 }
 
 // === UTILITÁRIOS ===
 
 // Permitir adicionar participante com Enter
-document.addEventListener('DOMContentLoaded', function() {
-    const nomeInput = document.getElementById('nome-participante');
-    const deptoInput = document.getElementById('depto-participante');
-    
-    if (nomeInput) {
-        nomeInput.addEventListener('keypress', function(e) {
-            if (e.key === 'Enter') {
-                adicionarParticipante();
-            }
-        });
-    }
-    
-    if (deptoInput) {
-        deptoInput.addEventListener('keypress', function(e) {
-            if (e.key === 'Enter') {
-                adicionarParticipante();
-            }
-        });
-    }
-    
-    // Configurar upload de imagem
-    configurarUploadImagem();
-    
-    // Verificar login do administrador
-    verificarLoginAdmin();
-});
+// DOMContentLoaded duplicado removido - funcionalidades movidas para o primeiro
 
 // === FUNÇÕES DE UPLOAD EXCEL ===
 
@@ -867,7 +1078,7 @@ function exportarDados() {
 }
 
 // Função para limpar todos os dados
-function limparListaParticipantes() {
+async function limparListaParticipantes() {
     // Verificar se há participantes na lista
     if (participantes.length === 0) {
         alert('A lista já está vazia.');
@@ -886,41 +1097,60 @@ function limparListaParticipantes() {
     );
     
     if (confirmacao) {
-        // Limpar todos os dados
-        participantes = [];
-        pesquisas = [];
-        
-        // Limpar localStorage
-        localStorage.removeItem('participantes');
-        localStorage.removeItem('pesquisas');
-        
-        // Atualizar interface
-        atualizarListaParticipantes();
-        atualizarResultadosPesquisa();
-        
-        // Limpar resultados de sorteios
-        document.getElementById('resultado-grupos').innerHTML = '';
-        document.getElementById('info-grupos').innerHTML = '';
-        document.getElementById('resultado-brinde').innerHTML = '';
-        
-        // Mostrar mensagem de sucesso
-        alert('✅ Todos os dados foram limpos com sucesso!');
+        try {
+            // Limpar todos os dados
+            participantes = [];
+            pesquisas = [];
+            
+            if (isSupabaseReady) {
+                // Limpar dados no Supabase
+                await window.supabaseService.clearAllData();
+            } else {
+                // Limpar localStorage
+                localStorage.removeItem('participantes');
+                localStorage.removeItem('pesquisas');
+                localStorage.removeItem('imagemCapa');
+            }
+            
+            // Atualizar interface
+            atualizarListaParticipantes();
+            atualizarIndicadorPresenca();
+            atualizarResultadosPesquisa();
+            
+            // Remover imagem de capa
+            removerImagemCapa();
+            
+            alert('✅ Todos os dados foram limpos com sucesso!');
+            
+        } catch (error) {
+            console.error('Erro ao limpar dados:', error);
+            alert('Erro ao limpar dados. Tente novamente.');
+        }
     }
 }
 
-function limparDados() {
-    if (confirm('Tem certeza que deseja limpar todos os dados? Esta ação não pode ser desfeita.')) {
+async function limparDados() {
+    try {
+        if (isSupabaseReady) {
+            await window.supabaseService.clearAllData();
+        } else {
+            localStorage.clear();
+        }
+        
+        // Resetar variáveis
         participantes = [];
         pesquisas = [];
-        localStorage.removeItem('sistemaPresenca');
         
+        // Atualizar interface
         atualizarListaParticipantes();
+        atualizarIndicadorPresenca();
         atualizarResultadosPesquisa();
         
-        document.getElementById('resultado-grupos').innerHTML = '';
-        document.getElementById('resultado-brinde').innerHTML = '';
+        alert('Dados limpos com sucesso!');
         
-        alert('Todos os dados foram limpos.');
+    } catch (error) {
+        console.error('Erro ao limpar dados:', error);
+        alert('Erro ao limpar dados. Tente novamente.');
     }
 }
 
@@ -1027,6 +1257,7 @@ function carregarImagemCapa() {
 
 // Funções de autenticação do administrador
 const SENHA_ADMIN = "admin123"; // Senha padrão (pode ser alterada)
+let currentUser = null;
 
 function showAdminLogin() {
     document.getElementById('admin-login-modal').style.display = 'flex';
@@ -1039,59 +1270,142 @@ function closeAdminLogin() {
     document.getElementById('login-error').style.display = 'none';
 }
 
-function autenticarAdmin(event) {
+async function autenticarAdmin(event) {
     event.preventDefault();
     
     const senha = document.getElementById('admin-password').value;
     const loginError = document.getElementById('login-error');
     
-    if (senha === SENHA_ADMIN) {
-        // Login bem-sucedido
+    try {
+        if (isSupabaseReady) {
+            // Usar Supabase Auth para autenticação
+            const adminEmail = 'admin@sistema.com'; // Email padrão do admin
+            
+            try {
+                const { user } = await window.supabaseService.signIn(adminEmail, senha);
+                currentUser = user;
+                
+                // Login bem-sucedido
+                document.getElementById('admin-login-modal').style.display = 'none';
+                showModule('admin');
+                document.getElementById('admin-panel').style.display = 'block';
+                
+                // Salvar estado de login (sessão)
+                sessionStorage.setItem('adminLoggedIn', 'true');
+                sessionStorage.setItem('adminUser', JSON.stringify(user));
+                
+                // Limpar campo de senha
+                document.getElementById('admin-password').value = '';
+                loginError.style.display = 'none';
+                
+            } catch (authError) {
+                // Se falhar no Supabase, usar autenticação local como fallback
+                if (senha === SENHA_ADMIN) {
+                    loginSuccess();
+                } else {
+                    loginFailed();
+                }
+            }
+        } else {
+            // Usar autenticação local
+            if (senha === SENHA_ADMIN) {
+                loginSuccess();
+            } else {
+                loginFailed();
+            }
+        }
+    } catch (error) {
+        console.error('Erro na autenticação:', error);
+        loginFailed();
+    }
+    
+    function loginSuccess() {
         document.getElementById('admin-login-modal').style.display = 'none';
-        
-        // Mostrar o painel administrativo
         showModule('admin');
         document.getElementById('admin-panel').style.display = 'block';
-        
-        // Salvar estado de login (sessão)
         sessionStorage.setItem('adminLoggedIn', 'true');
-        
-        // Limpar campo de senha
         document.getElementById('admin-password').value = '';
         loginError.style.display = 'none';
-        
-    } else {
-        // Senha incorreta
+    }
+    
+    function loginFailed() {
         loginError.style.display = 'block';
         document.getElementById('admin-password').value = '';
-        
-        // Ocultar erro após 3 segundos
         setTimeout(() => {
             loginError.style.display = 'none';
         }, 3000);
     }
 }
 
-function logoutAdmin() {
+async function logoutAdmin() {
     if (confirm('Tem certeza que deseja sair do painel administrativo?')) {
-        // Ocultar painel administrativo
-        document.getElementById('admin-panel').style.display = 'none';
-        
-        // Voltar para o módulo de presença
-        showModule('presenca');
-        
-        // Remover estado de login
-        sessionStorage.removeItem('adminLoggedIn');
+        try {
+            if (isSupabaseReady && currentUser) {
+                await window.supabaseService.signOut();
+                currentUser = null;
+            }
+            
+            // Ocultar painel administrativo
+            document.getElementById('admin-panel').style.display = 'none';
+            
+            // Voltar para o módulo de presença
+            showModule('presenca');
+            
+            // Remover estado de login
+            sessionStorage.removeItem('adminLoggedIn');
+            sessionStorage.removeItem('adminUser');
+            
+        } catch (error) {
+            console.error('Erro no logout:', error);
+            // Mesmo com erro, fazer logout local
+            document.getElementById('admin-panel').style.display = 'none';
+            showModule('presenca');
+            sessionStorage.removeItem('adminLoggedIn');
+            sessionStorage.removeItem('adminUser');
+        }
     }
 }
 
-function verificarLoginAdmin() {
-    const isLoggedIn = sessionStorage.getItem('adminLoggedIn');
+async function verificarLoginAdmin() {
+    const adminLoggedIn = sessionStorage.getItem('adminLoggedIn');
     
-    if (isLoggedIn === 'true') {
-        // Se já está logado, mostrar o painel administrativo
-        showModule('admin');
-        document.getElementById('admin-panel').style.display = 'block';
+    if (adminLoggedIn === 'true') {
+        if (isSupabaseReady) {
+            // Verificar se o usuário ainda está autenticado no Supabase
+            try {
+                const user = await window.supabaseService.getCurrentUser();
+                if (user) {
+                    currentUser = user;
+                    document.getElementById('admin-panel').style.display = 'block';
+                } else {
+                    // Usuário não está mais autenticado, fazer logout
+                    sessionStorage.removeItem('adminLoggedIn');
+                    sessionStorage.removeItem('adminUser');
+                }
+            } catch (error) {
+                console.error('Erro ao verificar autenticação:', error);
+            }
+        } else {
+            // Usar verificação local
+            document.getElementById('admin-panel').style.display = 'block';
+        }
+    }
+}
+
+// Configurar listener para mudanças de autenticação
+async function setupAuthListener() {
+    if (isSupabaseReady) {
+        window.supabaseService.onAuthStateChange((event, session) => {
+            if (event === 'SIGNED_OUT') {
+                currentUser = null;
+                document.getElementById('admin-panel').style.display = 'none';
+                sessionStorage.removeItem('adminLoggedIn');
+                sessionStorage.removeItem('adminUser');
+                showModule('presenca');
+            } else if (event === 'SIGNED_IN' && session?.user) {
+                currentUser = session.user;
+            }
+        });
     }
 }
 
