@@ -145,7 +145,7 @@ class SupabaseService {
             console.log(`📋 Participante encontrado:`, existingParticipant);
 
             // Agora remover o participante
-            const { data, error, count } = await this.client
+            const { data, error } = await this.client
                 .from(this.config.PARTICIPANTS_TABLE)
                 .delete()
                 .eq('id', id)
