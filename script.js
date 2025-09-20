@@ -61,7 +61,10 @@ document.addEventListener('DOMContentLoaded', function() {
 // Função para inicializar Supabase
 async function initializeSupabase() {
     try {
+        console.log('🚀 Iniciando configuração do Supabase...');
+        
         if (window.supabaseService) {
+            console.log('📦 Serviço Supabase encontrado, testando conexão...');
             const connected = await window.supabaseService.testConnection();
             if (connected) {
                 console.log('✅ Supabase conectado com sucesso!');
@@ -70,18 +73,40 @@ async function initializeSupabase() {
                 // Verificar se há dados no localStorage para migrar
                 const localData = localStorage.getItem('sistemaPresenca');
                 if (localData && JSON.parse(localData).participantes?.length > 0) {
+                    console.log('📋 Dados locais encontrados, oferecendo migração...');
                     const migrate = confirm('Foram encontrados dados locais. Deseja migrar para o Supabase?');
                     if (migrate) {
+                        console.log('🔄 Iniciando migração de dados...');
                         await window.supabaseService.syncFromLocalStorage();
                         // Limpar localStorage após migração
                         localStorage.removeItem('sistemaPresenca');
                         alert('Dados migrados com sucesso para o Supabase!');
+                        console.log('✅ Migração concluída!');
                     }
                 }
+                
+                // Configurar listener de autenticação
+                if (window.supabaseService.onAuthStateChange) {
+                    console.log('🔐 Configurando listener de autenticação...');
+                    window.supabaseService.onAuthStateChange((event, session) => {
+                        console.log('🔄 Estado de autenticação alterado:', event, session);
+                        if (event === 'SIGNED_IN') {
+                            currentUser = session.user;
+                            console.log('✅ Usuário logado:', currentUser);
+                        } else if (event === 'SIGNED_OUT') {
+                            currentUser = null;
+                            console.log('👋 Usuário deslogado');
+                        }
+                    });
+                }
+                
             } else {
                 console.warn('⚠️ Supabase não conectado, usando localStorage como fallback');
                 isSupabaseReady = false;
             }
+        } else {
+            console.error('❌ Serviço Supabase não encontrado!');
+            isSupabaseReady = false;
         }
     } catch (error) {
         console.error('❌ Erro ao inicializar Supabase:', error);
@@ -206,14 +231,41 @@ async function togglePresenca(id) {
 async function removerParticipante(id) {
     if (confirm('Tem certeza que deseja remover este participante?')) {
         try {
+            console.log(`🔄 Iniciando remoção do participante ${id}...`);
+            
             if (isSupabaseReady) {
                 // Remover do Supabase
-                await window.supabaseService.removeParticipant(id);
+                console.log(`📡 Removendo participante ${id} do Supabase...`);
+                const removido = await window.supabaseService.removeParticipant(id);
+                
+                if (!removido) {
+                    console.warn(`⚠️ Participante ${id} não foi encontrado no Supabase`);
+                    // Mesmo assim, remover da lista local se existir
+                }
             }
             
-            // Remover dos dados locais
-            participantes = participantes.filter(p => p.id !== id);
+            // Verificar se existe na lista local antes de remover
+            const participanteLocal = participantes.find(p => p.id === id);
+            if (participanteLocal) {
+                console.log(`📋 Participante encontrado na lista local:`, participanteLocal);
+                
+                // Remover dos dados locais
+                const tamanhoAntes = participantes.length;
+                participantes = participantes.filter(p => p.id !== id);
+                const tamanhoDepois = participantes.length;
+                
+                console.log(`📊 Lista local: ${tamanhoAntes} → ${tamanhoDepois} participantes`);
+                
+                if (tamanhoAntes === tamanhoDepois) {
+                    console.warn(`⚠️ PROBLEMA: Participante ${id} não foi removido da lista local!`);
+                } else {
+                    console.log(`✅ Participante ${id} removido da lista local com sucesso`);
+                }
+            } else {
+                console.warn(`⚠️ Participante ${id} não encontrado na lista local`);
+            }
             
+            // Atualizar interface
             atualizarListaParticipantes();
             atualizarIndicadorPresenca();
             
@@ -221,8 +273,10 @@ async function removerParticipante(id) {
                 salvarDados();
             }
             
+            console.log(`✅ Processo de remoção do participante ${id} concluído`);
+            
         } catch (error) {
-            console.error('Erro ao remover participante:', error);
+            console.error(`💥 Erro ao remover participante ${id}:`, error);
             alert('Erro ao remover participante. Tente novamente.');
         }
     }
@@ -1421,7 +1475,9 @@ async function autenticarAdmin(event) {
             const adminEmail = 'admin@sistema.com'; // Email padrão do admin
             
             try {
+                console.log('🔐 Tentando fazer login com:', adminEmail);
                 const { user } = await window.supabaseService.signIn(adminEmail, senha);
+                console.log('✅ Login bem-sucedido:', user);
                 currentUser = user;
                 
                 // Login bem-sucedido
@@ -1438,11 +1494,53 @@ async function autenticarAdmin(event) {
                 loginError.style.display = 'none';
                 
             } catch (authError) {
-                // Se falhar no Supabase, usar autenticação local como fallback
-                if (senha === SENHA_ADMIN) {
-                    loginSuccess();
+                console.log('❌ Erro no login Supabase:', authError.message);
+                
+                // Se o erro for de credenciais inválidas, tentar criar o usuário admin
+                if (authError.message.includes('Invalid login credentials')) {
+                    console.log('🔧 Tentando criar usuário admin...');
+                    try {
+                        // Tentar criar o usuário admin
+                        const signUpResult = await window.supabaseService.signUp(adminEmail, senha, {
+                            role: 'admin',
+                            name: 'Administrador'
+                        });
+                        console.log('✅ Usuário admin criado:', signUpResult);
+                        
+                        // Após criar, tentar fazer login novamente
+                        const { user } = await window.supabaseService.signIn(adminEmail, senha);
+                        console.log('✅ Login após criação bem-sucedido:', user);
+                        currentUser = user;
+                        
+                        // Login bem-sucedido
+                        document.getElementById('admin-login-modal').style.display = 'none';
+                        showModule('admin');
+                        document.getElementById('admin-panel').style.display = 'block';
+                        
+                        // Salvar estado de login (sessão)
+                        sessionStorage.setItem('adminLoggedIn', 'true');
+                        sessionStorage.setItem('adminUser', JSON.stringify(user));
+                        
+                        // Limpar campo de senha
+                        document.getElementById('admin-password').value = '';
+                        loginError.style.display = 'none';
+                        
+                    } catch (signUpError) {
+                        console.log('❌ Erro ao criar usuário admin:', signUpError.message);
+                        // Se falhar na criação, usar autenticação local como fallback
+                        if (senha === SENHA_ADMIN) {
+                            loginSuccess();
+                        } else {
+                            loginFailed();
+                        }
+                    }
                 } else {
-                    loginFailed();
+                    // Para outros erros, usar autenticação local como fallback
+                    if (senha === SENHA_ADMIN) {
+                        loginSuccess();
+                    } else {
+                        loginFailed();
+                    }
                 }
             }
         } else {

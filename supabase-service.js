@@ -15,15 +15,33 @@ class SupabaseService {
 
     async getParticipants() {
         try {
+            console.log('🔍 Buscando participantes...');
+            
+            // Tentar com timeout personalizado
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 segundos
+            
             const { data, error } = await this.client
                 .from(this.config.PARTICIPANTS_TABLE)
                 .select('*')
-                .order('created_at', { ascending: true });
+                .order('created_at', { ascending: true })
+                .abortSignal(controller.signal);
 
-            if (error) throw error;
+            clearTimeout(timeoutId);
+
+            if (error) {
+                console.error('❌ Erro ao buscar participantes:', error);
+                throw error;
+            }
+            
+            console.log('✅ Participantes carregados:', data?.length || 0);
             return data || [];
         } catch (error) {
-            console.error('Erro ao buscar participantes:', error);
+            if (error.name === 'AbortError') {
+                console.error('⏰ Timeout na requisição de participantes');
+                throw new Error('Timeout na conexão com o servidor');
+            }
+            console.error('❌ Erro ao buscar participantes:', error);
             return [];
         }
     }
@@ -107,18 +125,60 @@ class SupabaseService {
     async removeParticipant(id) {
         try {
             console.log(`🔄 Removendo participante ${id} do Supabase...`);
-            const { data, error } = await this.client
+            
+            // Primeiro, verificar se o participante existe
+            const { data: existingParticipant, error: checkError } = await this.client
+                .from(this.config.PARTICIPANTS_TABLE)
+                .select('*')
+                .eq('id', id)
+                .single();
+
+            if (checkError) {
+                console.error(`❌ Erro ao verificar participante ${id}:`, checkError);
+                if (checkError.code === 'PGRST116') {
+                    console.log(`⚠️ Participante ${id} não encontrado no banco`);
+                    return false;
+                }
+                throw checkError;
+            }
+
+            console.log(`📋 Participante encontrado:`, existingParticipant);
+
+            // Agora remover o participante
+            const { data, error, count } = await this.client
                 .from(this.config.PARTICIPANTS_TABLE)
                 .delete()
-                .eq('id', id);
+                .eq('id', id)
+                .select(); // Adicionar select para retornar os dados removidos
 
             if (error) {
                 console.error(`❌ Erro ao remover participante ${id}:`, error);
                 throw error;
             }
             
-            console.log(`✅ Participante ${id} removido do Supabase:`, data);
-            return true;
+            // Verificar se realmente foi removido
+            if (data && data.length > 0) {
+                console.log(`✅ Participante ${id} removido com sucesso:`, data[0]);
+                
+                // Verificação adicional - tentar buscar o participante novamente
+                const { data: verifyData, error: verifyError } = await this.client
+                    .from(this.config.PARTICIPANTS_TABLE)
+                    .select('*')
+                    .eq('id', id);
+
+                if (verifyError && verifyError.code !== 'PGRST116') {
+                    console.error(`❌ Erro na verificação:`, verifyError);
+                } else if (verifyData && verifyData.length === 0) {
+                    console.log(`✅ Confirmado: Participante ${id} não existe mais no banco`);
+                } else {
+                    console.warn(`⚠️ ATENÇÃO: Participante ${id} ainda existe no banco!`, verifyData);
+                }
+                
+                return true;
+            } else {
+                console.warn(`⚠️ Nenhum registro foi removido para o ID ${id}`);
+                return false;
+            }
         } catch (error) {
             console.error(`💥 Erro ao remover participante ${id}:`, error);
             throw error;

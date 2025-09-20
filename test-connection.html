@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Teste de Conexão Supabase</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .test-section {
+            margin: 20px 0;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        .success { background-color: #d4edda; border-color: #c3e6cb; }
+        .error { background-color: #f8d7da; border-color: #f5c6cb; }
+        .info { background-color: #d1ecf1; border-color: #bee5eb; }
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover { background: #0056b3; }
+        pre {
+            background: #f8f9fa;
+            padding: 10px;
+            border-radius: 3px;
+            overflow-x: auto;
+        }
+        .log {
+            max-height: 300px;
+            overflow-y: auto;
+            background: #000;
+            color: #0f0;
+            padding: 10px;
+            font-family: monospace;
+            border-radius: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔍 Teste de Conexão Supabase</h1>
+        
+        <div class="test-section info">
+            <h3>📋 Informações da Configuração</h3>
+            <p><strong>URL:</strong> <span id="supabase-url"></span></p>
+            <p><strong>Status:</strong> <span id="connection-status">Não testado</span></p>
+        </div>
+
+        <div class="test-section">
+            <h3>🧪 Testes de Conexão</h3>
+            <button onclick="testBasicConnection()">Teste Básico</button>
+            <button onclick="testTableAccess()">Teste de Acesso à Tabela</button>
+            <button onclick="testInsertData()">Teste de Inserção</button>
+            <button onclick="testSelectData()">Teste de Consulta</button>
+            <button onclick="testDeleteData()">Teste de Exclusão</button>
+            <button onclick="clearLogs()">Limpar Logs</button>
+        </div>
+
+        <div class="test-section">
+            <h3>📊 Logs de Teste</h3>
+            <div id="test-logs" class="log"></div>
+        </div>
+    </div>
+
+    <!-- Carregar Supabase -->
+    <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+    <script src="supabase-config.js"></script>
+
+    <script>
+        // Função para adicionar logs
+        function addLog(message, type = 'info') {
+            const logs = document.getElementById('test-logs');
+            const timestamp = new Date().toLocaleTimeString();
+            const emoji = type === 'error' ? '❌' : type === 'success' ? '✅' : '🔍';
+            logs.innerHTML += `[${timestamp}] ${emoji} ${message}\n`;
+            logs.scrollTop = logs.scrollHeight;
+        }
+
+        function clearLogs() {
+            document.getElementById('test-logs').innerHTML = '';
+        }
+
+        // Inicializar informações
+        document.addEventListener('DOMContentLoaded', function() {
+            document.getElementById('supabase-url').textContent = SUPABASE_URL;
+            addLog('Página carregada. Pronto para testes.');
+        });
+
+        // Teste básico de conexão
+        async function testBasicConnection() {
+            addLog('Iniciando teste básico de conexão...');
+            try {
+                const { data, error } = await supabaseClient.from('participants').select('count', { count: 'exact', head: true });
+                
+                if (error) {
+                    addLog(`Erro na conexão: ${error.message}`, 'error');
+                    addLog(`Detalhes do erro: ${JSON.stringify(error)}`, 'error');
+                    document.getElementById('connection-status').textContent = 'Erro';
+                } else {
+                    addLog('Conexão básica bem-sucedida!', 'success');
+                    document.getElementById('connection-status').textContent = 'Conectado';
+                }
+            } catch (err) {
+                addLog(`Erro inesperado: ${err.message}`, 'error');
+                document.getElementById('connection-status').textContent = 'Erro';
+            }
+        }
+
+        // Teste de acesso à tabela
+        async function testTableAccess() {
+            addLog('Testando acesso à tabela participants...');
+            try {
+                const { data, error } = await supabaseClient
+                    .from('participants')
+                    .select('*')
+                    .limit(1);
+                
+                if (error) {
+                    addLog(`Erro no acesso à tabela: ${error.message}`, 'error');
+                    addLog(`Código do erro: ${error.code}`, 'error');
+                } else {
+                    addLog(`Acesso à tabela bem-sucedido! Registros encontrados: ${data.length}`, 'success');
+                    if (data.length > 0) {
+                        addLog(`Exemplo de registro: ${JSON.stringify(data[0])}`, 'info');
+                    }
+                }
+            } catch (err) {
+                addLog(`Erro inesperado no acesso à tabela: ${err.message}`, 'error');
+            }
+        }
+
+        // Teste de inserção
+        async function testInsertData() {
+            addLog('Testando inserção de dados...');
+            const testName = `Teste_${Date.now()}`;
+            
+            try {
+                const { data, error } = await supabaseClient
+                    .from('participants')
+                    .insert([{
+                        name: testName,
+                        department: 'Teste',
+                        present: false
+                    }])
+                    .select();
+                
+                if (error) {
+                    addLog(`Erro na inserção: ${error.message}`, 'error');
+                    addLog(`Detalhes: ${JSON.stringify(error)}`, 'error');
+                } else {
+                    addLog(`Inserção bem-sucedida! ID: ${data[0].id}`, 'success');
+                    window.testInsertId = data[0].id; // Salvar para teste de exclusão
+                }
+            } catch (err) {
+                addLog(`Erro inesperado na inserção: ${err.message}`, 'error');
+            }
+        }
+
+        // Teste de consulta
+        async function testSelectData() {
+            addLog('Testando consulta de dados...');
+            try {
+                const { data, error, count } = await supabaseClient
+                    .from('participants')
+                    .select('*', { count: 'exact' });
+                
+                if (error) {
+                    addLog(`Erro na consulta: ${error.message}`, 'error');
+                } else {
+                    addLog(`Consulta bem-sucedida! Total de registros: ${count}`, 'success');
+                    addLog(`Primeiros registros: ${JSON.stringify(data.slice(0, 3))}`, 'info');
+                }
+            } catch (err) {
+                addLog(`Erro inesperado na consulta: ${err.message}`, 'error');
+            }
+        }
+
+        // Teste de exclusão
+        async function testDeleteData() {
+            if (!window.testInsertId) {
+                addLog('Execute primeiro o teste de inserção para ter um registro para deletar.', 'error');
+                return;
+            }
+
+            addLog(`Testando exclusão do registro ID: ${window.testInsertId}...`);
+            try {
+                const { data, error } = await supabaseClient
+                    .from('participants')
+                    .delete()
+                    .eq('id', window.testInsertId)
+                    .select();
+                
+                if (error) {
+                    addLog(`Erro na exclusão: ${error.message}`, 'error');
+                } else {
+                    addLog(`Exclusão bem-sucedida! Registro removido: ${JSON.stringify(data)}`, 'success');
+                    window.testInsertId = null;
+                }
+            } catch (err) {
+                addLog(`Erro inesperado na exclusão: ${err.message}`, 'error');
+            }
+        }
+    </script>
+</body>
+</html>
