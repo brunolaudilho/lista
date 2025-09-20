@@ -1,43 +1,39 @@
-# Sistema de Lista de Presença - Treinamento Corporativo
+# Sistema de Lista de Presença
 
-Sistema completo para gerenciamento de presença em treinamentos corporativos, com integração ao Supabase para sincronização em tempo real e interface otimizada para tablets.
+Sistema completo para gerenciamento de presença em treinamentos corporativos, com interface otimizada para tablets e funcionalidades avançadas.
 
 ## 🚀 Funcionalidades
 
-### 📋 Lista de Presença
-- Adicionar participantes com departamento
-- Check-in/check-out com horário automático
-- Contador de presentes em tempo real
-- Sincronização automática com Supabase
-- Backup local com localStorage
+### Gestão de Participantes
+- Adição manual de participantes
+- Importação via planilha Excel (.xlsx)
+- Controle de presença em tempo real
+- Pesquisa e filtros avançados
 
-### 👥 Sorteio de Grupos
-- Sorteio automático dos participantes presentes
-- Configuração do número de grupos
-- Distribuição equilibrada
-- Visualização clara dos grupos formados
-- Salvamento dos grupos no banco de dados
+### Organização por Grupos
+- Criação de grupos personalizados
+- Atribuição automática ou manual
+- Visualização por categorias
 
-### 🎁 Sorteio de Brinde
-- Sorteio aleatório entre participantes presentes
-- Animação de sorteio
-- Personalização do nome do brinde
-- Registro do horário do sorteio
+### Recursos Administrativos
+- **Painel Administrador Completo**: Interface dedicada para gestão
+- **Sorteio de Brindes**: Sistema automatizado entre participantes presentes
+- **Imagem de Capa**: Upload e gerenciamento de imagem personalizada do evento
+- **Indicador de Presença**: Visualização em tempo real do status dos participantes
+- **Pesquisa de Satisfação Integrada**: 
+  - Sistema NPS (Net Promoter Score)
+  - Avaliação da Qualidade do Evento
+  - Avaliação do Instrutor
+  - Gráficos interativos com Chart.js
+- **Banco de Dados**: Gerenciamento completo de dados com backup/restore
+- **Sistema de Autenticação**: Acesso seguro para administradores
+- **Armazenamento Híbrido**: Local (localStorage) + Nuvem (Supabase)
 
-### 📊 Pesquisa de Satisfação (NPS)
-- Escala NPS de 0 a 10
-- Avaliação de qualidade do conteúdo (1-5 estrelas)
-- Avaliação do instrutor (1-5 estrelas)
-- Campo para comentários
-- Cálculo automático do NPS
-- Categorização (Promotores, Neutros, Detratores)
-- Armazenamento seguro no Supabase
-
-### 🔐 Área Administrativa
-- Acesso protegido por senha
-- Visualização de todas as pesquisas
-- Relatórios detalhados de NPS
-- Gestão de participantes e eventos
+### Interface Otimizada
+- Design responsivo para tablets
+- Navegação intuitiva por abas
+- Indicadores visuais de presença
+- Gráficos interativos com Chart.js
 
 ## 🛠️ Como Usar
 
@@ -94,8 +90,16 @@ Sistema completo para gerenciamento de presença em treinamentos corporativos, c
 ### Navegação
 - **Lista de Presença**: Gerenciar participantes e presenças
 - **Sorteio de Grupos**: Formar grupos aleatórios
-- **Sorteio de Brinde**: Sortear brindes entre presentes
-- **Pesquisa de Satisfação**: Coletar feedback com NPS
+- **Painel Administrador**: Acesso completo às funcionalidades administrativas
+  - **1ª Seção - Sorteio de Brinde**: Sortear brindes entre participantes presentes
+  - **2ª Seção - Imagem de Capa**: Upload e gerenciamento da imagem do evento
+  - **3ª Seção - Indicador de Presença**: Visualização em tempo real dos participantes
+  - **4ª Seção - Resultados da Pesquisa**: Análise completa de satisfação
+    - Distribuição NPS com gráfico interativo
+    - Avaliação da Qualidade do Evento
+    - Avaliação do Instrutor
+    - Respostas detalhadas dos participantes
+  - **5ª Seção - Banco de Dados**: Backup, restore e gerenciamento de dados
 
 ### Recursos Especiais
 - Design responsivo otimizado para tablets
@@ -113,8 +117,10 @@ Sistema completo para gerenciamento de presença em treinamentos corporativos, c
    - Usar Sorteio de Grupos para atividades em equipe
 
 3. **Final do Treinamento**:
+   - Acessar o Painel Administrador
    - Realizar Sorteio de Brinde
-   - Aplicar Pesquisa de Satisfação
+   - Aplicar Pesquisa de Satisfação (NPS + Qualidade + Instrutor)
+   - Fazer backup dos dados
 
 ## 💾 Dados e Sincronização
 
@@ -248,9 +254,13 @@ Este projeto está sob a licença MIT. Veja o arquivo `LICENSE` para mais detalh
 
 **Desenvolvido com ❤️ para facilitar seus treinamentos corporativos!**
 
-### 🎯 Versão Atual: 2.0
+### 🎯 Versão Atual: 3.0
+- ✅ **Painel Administrador Reorganizado**: Nova estrutura com 5 seções organizadas
+- ✅ **Pesquisa de Satisfação Completa**: NPS + Qualidade + Avaliação do Instrutor
+- ✅ **Interface Aprimorada**: Seções numeradas e organizadas logicamente
+- ✅ **Gráficos Interativos**: Chart.js para visualização de dados
+- ✅ **Correções de Bugs**: Problemas de compatibilidade de IDs resolvidos
 - ✅ Integração completa com Supabase
 - ✅ Sincronização em tempo real
 - ✅ Interface responsiva otimizada
 - ✅ Sistema de backup híbrido
-- ✅ Área administrativa completa

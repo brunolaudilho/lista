@@ -4,18 +4,20 @@ let pesquisas = [];
 let npsChart = null;
 let qualidadeChart = null;
 let instrutorChart = null;
-let isSupabaseReady = false;
+let databaseService;
 
 // Inicialização
 document.addEventListener('DOMContentLoaded', function() {
+    // Aguardar o banco de dados estar pronto
+    window.addEventListener('databaseReady', () => {
+        console.log('🎯 Banco de dados pronto, iniciando aplicação...');
+        inicializarAplicacao();
+    });
+    
     // Função assíncrona para inicialização
-    async function inicializar() {
+    async function inicializarAplicacao() {
         try {
-            // Inicializar Supabase primeiro
-            await initializeSupabase();
-            
-            // Configurar listener de autenticação
-            await setupAuthListener();
+            console.log('🚀 Inicializando aplicação...');
             
             // Carregar dados
             await carregarDados();
@@ -49,43 +51,65 @@ document.addEventListener('DOMContentLoaded', function() {
             
             // Configurar upload de imagem
             configurarUploadImagem();
+            
+            console.log('✅ Aplicação inicializada com sucesso!');
+            
         } catch (error) {
-            console.error('Erro na inicialização:', error);
+            console.error('❌ Erro na inicialização:', error);
         }
     }
-    
-    // Executar inicialização
-    inicializar();
 });
 
-// Função para inicializar Supabase
-async function initializeSupabase() {
+// Função para carregar dados do SQLite
+async function carregarDados() {
     try {
-        if (window.supabaseService) {
-            const connected = await window.supabaseService.testConnection();
-            if (connected) {
-                console.log('✅ Supabase conectado com sucesso!');
-                isSupabaseReady = true;
-                
-                // Verificar se há dados no localStorage para migrar
-                const localData = localStorage.getItem('sistemaPresenca');
-                if (localData && JSON.parse(localData).participantes?.length > 0) {
-                    const migrate = confirm('Foram encontrados dados locais. Deseja migrar para o Supabase?');
-                    if (migrate) {
-                        await window.supabaseService.syncFromLocalStorage();
-                        // Limpar localStorage após migração
-                        localStorage.removeItem('sistemaPresenca');
-                        alert('Dados migrados com sucesso para o Supabase!');
-                    }
-                }
-            } else {
-                console.warn('⚠️ Supabase não conectado, usando localStorage como fallback');
-                isSupabaseReady = false;
-            }
+        if (window.databaseService && !window.databaseService.isLocalStorage) {
+            console.log('📊 Carregando dados do SQLite...');
+            
+            // Carregar participantes
+            participantes = await window.databaseService.getParticipants();
+            console.log('Participantes carregados do SQLite:', participantes.length);
+            
+            // Carregar pesquisas do SQLite
+            pesquisas = await window.databaseService.getSurveyResponses();
+            console.log('Pesquisas carregadas do SQLite:', pesquisas.length);
+            
+            // Atualizar interface
+            atualizarListaParticipantes();
+            atualizarResultadosPesquisa();
+            atualizarIndicadorPresenca();
+            
+        } else {
+            console.log('📂 Usando fallback localStorage');
+            carregarDadosLocal();
         }
     } catch (error) {
-        console.error('❌ Erro ao inicializar Supabase:', error);
-        isSupabaseReady = false;
+        console.error('❌ Erro ao carregar dados do SQLite:', error);
+        // Fallback para localStorage
+        carregarDadosLocal();
+    }
+}
+
+// Função de fallback para carregar dados do localStorage
+function carregarDadosLocal() {
+    try {
+        const dados = localStorage.getItem('sistemaPresenca');
+        if (dados) {
+            const dadosParseados = JSON.parse(dados);
+            participantes = dadosParseados.participantes || [];
+            pesquisas = dadosParseados.pesquisas || [];
+            
+            console.log('Dados carregados do localStorage (fallback)');
+            
+            // Atualizar interface
+            atualizarListaParticipantes();
+            atualizarResultadosPesquisa();
+            atualizarIndicadorPresenca();
+        }
+    } catch (error) {
+        console.error('Erro ao carregar dados do localStorage:', error);
+        participantes = [];
+        pesquisas = [];
     }
 }
 
@@ -93,24 +117,42 @@ async function initializeSupabase() {
 function showModule(moduleId) {
     // Esconder todos os módulos
     const modules = document.querySelectorAll('.module');
-    modules.forEach(module => module.classList.remove('active'));
+    modules.forEach(module => {
+        if (module && module.classList) {
+            module.classList.remove('active');
+        }
+    });
     
     // Remover classe active dos botões
     const navBtns = document.querySelectorAll('.nav-btn');
-    navBtns.forEach(btn => btn.classList.remove('active'));
+    navBtns.forEach(btn => {
+        if (btn && btn.classList) {
+            btn.classList.remove('active');
+        }
+    });
     
     // Mostrar módulo selecionado
-    document.getElementById(moduleId).classList.add('active');
+    const targetModule = document.getElementById(moduleId);
+    if (targetModule && targetModule.classList) {
+        targetModule.classList.add('active');
+    }
     
-    // Ativar botão correspondente
-    event.target.classList.add('active');
+    const targetBtn = document.querySelector(`[onclick="showModule('${moduleId}')"]`);
+    if (targetBtn && targetBtn.classList) {
+        targetBtn.classList.add('active');
+    }
 }
 
-// === MÓDULO LISTA DE PRESENÇA ===
-
+// Função para adicionar participante
 async function adicionarParticipante() {
     const nomeInput = document.getElementById('nome-participante');
     const deptoInput = document.getElementById('depto-participante');
+    
+    if (!nomeInput || !deptoInput) {
+        console.error('Elementos de input não encontrados');
+        return;
+    }
+    
     const nome = nomeInput.value.trim();
     const depto = deptoInput.value.trim();
     
@@ -126,20 +168,10 @@ async function adicionarParticipante() {
     }
     
     try {
-        if (isSupabaseReady) {
-            // Usar Supabase
-            const novoParticipante = await window.supabaseService.addParticipant(nome, depto);
-            
-            // Converter formato Supabase para formato local
-            const participanteLocal = {
-                id: novoParticipante.id,
-                nome: novoParticipante.name,
-                departamento: novoParticipante.department || 'Não informado',
-                presente: novoParticipante.present,
-                horarioCheckIn: novoParticipante.arrival_time ? new Date(novoParticipante.arrival_time).toLocaleTimeString() : null
-            };
-            
-            participantes.push(participanteLocal);
+        if (window.databaseService && !window.databaseService.isLocalStorage) {
+            // Usar SQLite
+            const novoParticipante = await window.databaseService.addParticipant(nome, depto);
+            participantes.push(novoParticipante);
         } else {
             // Fallback para localStorage
             const participante = {
@@ -151,17 +183,15 @@ async function adicionarParticipante() {
             };
             
             participantes.push(participante);
+            salvarDados();
         }
         
         nomeInput.value = '';
         deptoInput.value = '';
+        nomeInput.focus();
         
         atualizarListaParticipantes();
         atualizarIndicadorPresenca();
-        
-        if (!isSupabaseReady) {
-            salvarDados();
-        }
         
     } catch (error) {
         console.error('Erro ao adicionar participante:', error);
@@ -169,32 +199,33 @@ async function adicionarParticipante() {
     }
 }
 
+// Função para alternar presença
 async function togglePresenca(id) {
     const participante = participantes.find(p => p.id === id);
     if (participante) {
-        const novoStatus = !participante.presente;
+        // Verificar o status atual considerando ambas as propriedades
+        const statusAtual = participante.presente || participante.present;
+        const novoStatus = !statusAtual;
         
         try {
-            if (isSupabaseReady) {
-                // Atualizar no Supabase
-                const participanteAtualizado = await window.supabaseService.updateParticipantPresence(id, novoStatus);
-                
-                // Atualizar dados locais
-                participante.presente = participanteAtualizado.present;
-                participante.horarioCheckIn = participanteAtualizado.arrival_time ? 
-                    new Date(participanteAtualizado.arrival_time).toLocaleTimeString() : null;
+            if (window.databaseService && !window.databaseService.isLocalStorage) {
+                // Atualizar no SQLite
+                await window.databaseService.markPresent(id, novoStatus);
+                participante.present = novoStatus;
+                participante.presente = novoStatus; // Manter consistência
+                participante.arrival_time = novoStatus ? new Date().toISOString() : null;
+                participante.horarioCheckin = novoStatus ? new Date().toISOString() : null; // Manter consistência
             } else {
                 // Fallback para localStorage
                 participante.presente = novoStatus;
-                participante.horarioCheckIn = novoStatus ? new Date().toLocaleTimeString() : null;
+                participante.present = novoStatus; // Manter consistência
+                participante.horarioCheckin = novoStatus ? new Date().toISOString() : null;
+                participante.arrival_time = novoStatus ? new Date().toISOString() : null; // Manter consistência
+                salvarDados();
             }
             
             atualizarListaParticipantes();
             atualizarIndicadorPresenca();
-            
-            if (!isSupabaseReady) {
-                salvarDados();
-            }
             
         } catch (error) {
             console.error('Erro ao atualizar presença:', error);
@@ -203,23 +234,22 @@ async function togglePresenca(id) {
     }
 }
 
+// Função para remover participante
 async function removerParticipante(id) {
     if (confirm('Tem certeza que deseja remover este participante?')) {
         try {
-            if (isSupabaseReady) {
-                // Remover do Supabase
-                await window.supabaseService.removeParticipant(id);
+            if (window.databaseService && !window.databaseService.isLocalStorage) {
+                // Remover do SQLite
+                await window.databaseService.removeParticipant(id);
+                participantes = participantes.filter(p => p.id !== id);
+            } else {
+                // Fallback para localStorage
+                participantes = participantes.filter(p => p.id !== id);
+                salvarDados();
             }
-            
-            // Remover dos dados locais
-            participantes = participantes.filter(p => p.id !== id);
             
             atualizarListaParticipantes();
             atualizarIndicadorPresenca();
-            
-            if (!isSupabaseReady) {
-                salvarDados();
-            }
             
         } catch (error) {
             console.error('Erro ao remover participante:', error);
@@ -228,315 +258,258 @@ async function removerParticipante(id) {
     }
 }
 
+// Função para atualizar lista de participantes
 function atualizarListaParticipantes() {
     const lista = document.getElementById('lista-participantes');
-    const totalElement = document.getElementById('total-participantes');
-    const presentesElement = document.getElementById('presentes');
-    
-    const presentes = participantes.filter(p => p.presente).length;
-    
-    totalElement.textContent = `Total: ${participantes.length}`;
-    presentesElement.textContent = `Presentes: ${presentes}`;
+    if (!lista) return;
     
     lista.innerHTML = '';
     
     participantes.forEach(participante => {
-        const div = document.createElement('div');
-        div.className = `participant-item ${participante.presente ? 'present' : ''}`;
+        const li = document.createElement('li');
+        li.className = `participant-item ${participante.presente || participante.present ? 'present' : ''}`;
         
-        div.innerHTML = `
+        li.innerHTML = `
             <div class="participant-info">
-                <span class="participant-name">${participante.nome}</span>
-                <span class="participant-dept">${participante.departamento}</span>
-                ${participante.horarioCheckIn ? `<span class="checkin-time">Check-in: ${participante.horarioCheckIn}</span>` : ''}
+                <span class="participant-name">${participante.nome || participante.name}</span>
+                <span class="participant-dept">${participante.departamento || participante.department}</span>
+                ${(participante.presente || participante.present) && (participante.horarioCheckin || participante.arrival_time) ? 
+                    `<span class="checkin-time">Check-in: ${new Date(participante.horarioCheckin || participante.arrival_time).toLocaleTimeString()}</span>` : ''}
             </div>
             <div class="participant-actions">
-                <button class="presence-btn ${participante.presente ? 'present' : ''}" 
-                        onclick="togglePresenca(${participante.id})">
-                    <i class="fas ${participante.presente ? 'fa-check-circle' : 'fa-user-plus'}"></i>
-                    ${participante.presente ? 'Presente' : 'Marcar Presente'}
+                <button onclick="togglePresenca(${participante.id})" class="presence-btn">
+                    ${participante.presente || participante.present ? 'Marcar Ausente' : 'Marcar Presente'}
                 </button>
-                <button class="remove-btn" onclick="removerParticipante(${participante.id})">
+                <button onclick="removerParticipante(${participante.id})" class="remove-btn">
                     <i class="fas fa-trash"></i>
                 </button>
             </div>
         `;
         
-        lista.appendChild(div);
+        lista.appendChild(li);
     });
 }
 
-// === MÓDULO SORTEIO DE GRUPOS ===
-
+// Função para sortear grupos
 function sortearGrupos() {
-    const participantesPresentes = participantes.filter(p => p.presente);
+    const participantesPresentes = participantes.filter(p => p.presente || p.present);
+    const numGruposElement = document.getElementById('num-grupos');
     
-    if (participantesPresentes.length < 2) {
-        alert('É necessário ter pelo menos 2 participantes presentes para formar grupos.');
+    if (!numGruposElement) {
+        alert('Elemento de número de grupos não encontrado.');
         return;
     }
     
-    const numGrupos = parseInt(document.getElementById('num-grupos').value);
-    const pessoasPorGrupo = parseInt(document.getElementById('pessoas-por-grupo').value);
+    const numGrupos = parseInt(numGruposElement.value);
     
-    // Calcular quantas pessoas serão sorteadas
-    const totalPessoasSorteadas = numGrupos * pessoasPorGrupo;
-    
-    if (totalPessoasSorteadas > participantesPresentes.length) {
-        alert(`Não há participantes suficientes. Você precisa de ${totalPessoasSorteadas} pessoas (${numGrupos} grupos × ${pessoasPorGrupo} pessoas), mas há apenas ${participantesPresentes.length} presentes.`);
+    if (participantesPresentes.length === 0) {
+        alert('Não há participantes presentes para sortear.');
         return;
     }
     
-    // Mostrar informações do sorteio
-    exibirInfoGrupos(participantesPresentes.length, totalPessoasSorteadas, numGrupos, pessoasPorGrupo);
+    if (numGrupos <= 0 || numGrupos > participantesPresentes.length) {
+        alert('Número de grupos inválido.');
+        return;
+    }
     
-    // Embaralhar participantes e selecionar apenas os necessários
+    // Embaralhar participantes
     const participantesEmbaralhados = [...participantesPresentes].sort(() => Math.random() - 0.5);
-    const participantesSelecionados = participantesEmbaralhados.slice(0, totalPessoasSorteadas);
     
-    // Dividir em grupos com número fixo de pessoas
+    // Dividir em grupos
     const grupos = [];
+    const pessoasPorGrupo = Math.floor(participantesPresentes.length / numGrupos);
+    const sobra = participantesPresentes.length % numGrupos;
     
+    let indice = 0;
     for (let i = 0; i < numGrupos; i++) {
-        const grupo = [];
-        const inicioGrupo = i * pessoasPorGrupo;
-        
-        for (let j = 0; j < pessoasPorGrupo; j++) {
-            grupo.push(participantesSelecionados[inicioGrupo + j]);
-        }
-        
-        grupos.push(grupo);
+        const tamanhoGrupo = pessoasPorGrupo + (i < sobra ? 1 : 0);
+        grupos.push(participantesEmbaralhados.slice(indice, indice + tamanhoGrupo));
+        indice += tamanhoGrupo;
     }
     
     exibirResultadoGrupos(grupos);
 }
 
-function exibirInfoGrupos(totalPresentes, totalSorteados, numGrupos, pessoasPorGrupo) {
-    const infoDiv = document.getElementById('info-grupos');
-    const naoSorteados = totalPresentes - totalSorteados;
-    
-    let html = `
-        <div class="group-info-card">
-            <h4><i class="fas fa-info-circle"></i> Informações do Sorteio</h4>
-            <div class="info-stats">
-                <div class="stat-item">
-                    <span class="stat-number">${totalPresentes}</span>
-                    <span class="stat-label">Presentes</span>
-                </div>
-                <div class="stat-item">
-                    <span class="stat-number">${totalSorteados}</span>
-                    <span class="stat-label">Sorteados</span>
-                </div>
-                <div class="stat-item">
-                    <span class="stat-number">${numGrupos}</span>
-                    <span class="stat-label">Grupos</span>
-                </div>
-                <div class="stat-item">
-                    <span class="stat-number">${pessoasPorGrupo}</span>
-                    <span class="stat-label">Por Grupo</span>
-                </div>
-            </div>`;
-    
-    if (naoSorteados > 0) {
-        html += `
-            <div class="info-alert">
-                <i class="fas fa-exclamation-triangle"></i>
-                ${naoSorteados} pessoa(s) não participará(ão) da dinâmica
-            </div>`;
-    }
-    
-    html += '</div>';
-    
-    infoDiv.innerHTML = html;
-}
-
+// Função para exibir resultado dos grupos
 function exibirResultadoGrupos(grupos) {
     const resultado = document.getElementById('resultado-grupos');
-    
-    let html = '<div class="groups-display">';
+    resultado.innerHTML = '';
     
     grupos.forEach((grupo, index) => {
-        html += `
-            <div class="group-card">
-                <h3><i class="fas fa-users"></i> Grupo ${index + 1}</h3>
-                <ul class="group-members">
-                    ${grupo.map(p => `<li>${p.nome}</li>`).join('')}
-                </ul>
-                <div class="group-count">${grupo.length} participante${grupo.length > 1 ? 's' : ''}</div>
-            </div>
+        const div = document.createElement('div');
+        div.className = 'grupo';
+        div.innerHTML = `
+            <h3>Grupo ${index + 1}</h3>
+            <ul>
+                ${grupo.map(p => `<li>${p.nome || p.name} - ${p.departamento || p.department}</li>`).join('')}
+            </ul>
         `;
+        resultado.appendChild(div);
     });
-    
-    html += '</div>';
-    
-    resultado.innerHTML = html;
 }
 
-// === MÓDULO SORTEIO DE BRINDE ===
-
+// Função para sortear brinde
 function sortearBrinde() {
-    const participantesPresentes = participantes.filter(p => p.presente);
+    const participantesPresentes = participantes.filter(p => p.presente || p.present);
     
     if (participantesPresentes.length === 0) {
-        alert('Não há participantes presentes para o sorteio.');
+        alert('Não há participantes presentes para sortear.');
         return;
     }
     
-    const nomeBrinde = document.getElementById('nome-brinde').value.trim() || 'Brinde Especial';
+    const vencedor = participantesPresentes[Math.floor(Math.random() * participantesPresentes.length)];
     
-    // Animação de sorteio
     const resultado = document.getElementById('resultado-brinde');
-    resultado.innerHTML = '<div class="loading-animation"><i class="fas fa-spinner fa-spin"></i> Sorteando...</div>';
-    
-    setTimeout(() => {
-        const vencedor = participantesPresentes[Math.floor(Math.random() * participantesPresentes.length)];
-        
-        resultado.innerHTML = `
-            <div class="prize-winner">
-                <div class="winner-animation">
-                    <i class="fas fa-trophy"></i>
-                </div>
-                <h3>🎉 Parabéns! 🎉</h3>
-                <div class="winner-name">${vencedor.nome}</div>
-                <div class="prize-name">ganhou: ${nomeBrinde}</div>
-                <div class="winner-time">Sorteado em: ${new Date().toLocaleString()}</div>
-            </div>
-        `;
-    }, 2000);
+    resultado.innerHTML = `
+        <div class="vencedor">
+            <h3>🎉 Parabéns!</h3>
+            <p><strong>${vencedor.nome || vencedor.name}</strong></p>
+            <p>${vencedor.departamento || vencedor.department}</p>
+        </div>
+    `;
 }
 
-// === MÓDULO PESQUISA DE SATISFAÇÃO ===
-
+// Configurar NPS
 function configurarNPS() {
-    const npsButtons = document.querySelectorAll('.nps-btn');
-    
-    npsButtons.forEach(btn => {
-        btn.addEventListener('click', function() {
-            // Remover seleção anterior
-            npsButtons.forEach(b => b.classList.remove('selected'));
-            
-            // Selecionar botão atual
-            this.classList.add('selected');
-            
-            // Definir valor no campo hidden
-            document.getElementById('nps-score').value = this.dataset.value;
+    const btns = document.querySelectorAll('.nps-btn');
+    if (btns.length > 0) {
+        btns.forEach(btn => {
+            if (btn && btn.addEventListener) {
+                btn.addEventListener('click', function() {
+                    btns.forEach(b => {
+                        if (b && b.classList) {
+                            b.classList.remove('selected');
+                        }
+                    });
+                    if (this.classList) {
+                        this.classList.add('selected');
+                    }
+                });
+            }
         });
-    });
+    }
 }
 
+// Configurar formulário de pesquisa
 function configurarFormularioPesquisa() {
     const form = document.getElementById('form-pesquisa');
-    
-    form.addEventListener('submit', async function(e) {
-        e.preventDefault();
-        
-        const npsScore = document.getElementById('nps-score').value;
-        
-        if (!npsScore) {
-            alert('Por favor, selecione uma nota de 0 a 10 para a pergunta NPS.');
-            return;
-        }
-        
-        try {
-            const pesquisa = {
+    if (form) {
+        form.addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const nps = document.querySelector('.nps-btn.selected')?.dataset.value;
+            const qualidadeElement = document.getElementById('qualidade');
+            const instrutorElement = document.getElementById('instrutor');
+            const comentariosElement = document.getElementById('comentarios');
+            
+            if (!qualidadeElement || !instrutorElement || !comentariosElement) {
+                alert('Elementos do formulário não encontrados.');
+                return;
+            }
+            
+            const qualidade = qualidadeElement.value;
+            const instrutor = instrutorElement.value;
+            const comentarios = comentariosElement.value;
+            
+            if (!nps) {
+                alert('Por favor, selecione uma nota de 0 a 10.');
+                return;
+            }
+            
+            if (!qualidade || !instrutor) {
+                alert('Por favor, preencha todos os campos obrigatórios.');
+                return;
+            }
+            
+            const resposta = {
                 id: Date.now(),
-                nps: parseInt(npsScore),
-                qualidade: document.getElementById('qualidade').value,
-                instrutor: document.getElementById('instrutor').value,
-                comentarios: document.getElementById('comentarios').value,
-                timestamp: new Date().toLocaleString()
+                nps: parseInt(nps),
+                qualidade: qualidade,
+                instrutor: instrutor,
+                comentarios: comentarios,
+                timestamp: new Date().toISOString()
             };
             
-            if (isSupabaseReady) {
-                // Salvar no Supabase
-                const novaPesquisa = await window.supabaseService.addSurvey(
-                    'Participante Anônimo', // Nome do participante
-                    parseInt(npsScore),
-                    document.getElementById('qualidade').value,
-                    document.getElementById('instrutor').value,
-                    document.getElementById('comentarios').value
-                );
+            try {
+                if (window.databaseService && !window.databaseService.isLocalStorage) {
+                    // Salvar no SQLite
+                    const success = await window.databaseService.addSurveyResponse(resposta);
+                    if (success) {
+                        pesquisas.push(resposta);
+                    }
+                } else {
+                    // Fallback para localStorage
+                    pesquisas.push(resposta);
+                    salvarDados();
+                }
                 
-                // Converter formato Supabase para formato local
-                const pesquisaLocal = {
-                    participantName: novaPesquisa.participant_name,
-                    npsScore: novaPesquisa.nps_score,
-                    qualityRating: novaPesquisa.quality_rating,
-                    instructorRating: novaPesquisa.instructor_rating,
-                    comments: novaPesquisa.comments,
-                    timestamp: novaPesquisa.created_at
-                };
+                // Limpar formulário
+                form.reset();
+                const npsButtons = document.querySelectorAll('.nps-btn');
+                if (npsButtons.length > 0) {
+                    npsButtons.forEach(btn => {
+                        if (btn && btn.classList) {
+                            btn.classList.remove('selected');
+                        }
+                    });
+                }
                 
-                pesquisas.push(pesquisaLocal);
-            } else {
-                // Fallback para localStorage
-                pesquisas.push(pesquisa);
+                // Atualizar resultados
+                atualizarResultadosPesquisa();
+                
+                alert('Obrigado pela sua avaliação!');
+                
+            } catch (error) {
+                console.error('Erro ao salvar pesquisa:', error);
+                alert('Erro ao salvar pesquisa. Tente novamente.');
             }
-            
-            // Resetar formulário
-            form.reset();
-            document.querySelectorAll('.nps-btn').forEach(btn => btn.classList.remove('selected'));
-            
-            // Atualizar resultados
-            atualizarResultadosPesquisa();
-            
-            if (!isSupabaseReady) {
-                salvarDados();
-            }
-            
-            alert('Pesquisa enviada com sucesso! Obrigado pelo seu feedback.');
-            
-        } catch (error) {
-            console.error('Erro ao salvar pesquisa:', error);
-            alert('Erro ao salvar pesquisa. Tente novamente.');
-        }
-    });
+        });
+    }
 }
 
+// Atualizar resultados da pesquisa
 function atualizarResultadosPesquisa() {
     if (pesquisas.length === 0) {
-        // Limpar gráficos se não houver dados
-        limparGraficos();
+        document.getElementById('total-respostas').textContent = '0';
+        document.getElementById('promotores').textContent = '0';
+        document.getElementById('neutros').textContent = '0';
+        document.getElementById('detratores').textContent = '0';
+        document.getElementById('nps-final').textContent = '-';
         return;
     }
     
-    const promotores = pesquisas.filter(p => p.nps >= 9).length;
-    const neutros = pesquisas.filter(p => p.nps >= 7 && p.nps <= 8).length;
-    const detratores = pesquisas.filter(p => p.nps <= 6).length;
-    const total = pesquisas.length;
+    // Calcular categorias NPS
+    let promotores = 0, neutros = 0, detratores = 0;
+    pesquisas.forEach(p => {
+        if (p.nps >= 9) promotores++;
+        else if (p.nps >= 7) neutros++;
+        else detratores++;
+    });
     
-    const nps = Math.round(((promotores - detratores) / total) * 100);
+    // Calcular NPS Score: (% Promotores - % Detratores)
+    const totalRespostas = pesquisas.length;
+    const percentualPromotores = (promotores / totalRespostas) * 100;
+    const percentualDetratores = (detratores / totalRespostas) * 100;
+    const npsScore = Math.round(percentualPromotores - percentualDetratores);
     
-    document.getElementById('nps-final').textContent = nps;
+    // Atualizar elementos que existem no HTML
+    document.getElementById('total-respostas').textContent = totalRespostas;
     document.getElementById('promotores').textContent = promotores;
     document.getElementById('neutros').textContent = neutros;
     document.getElementById('detratores').textContent = detratores;
-    document.getElementById('total-respostas').textContent = total;
+    document.getElementById('nps-final').textContent = npsScore;
     
-    // Colorir o NPS baseado no valor
-    const npsElement = document.getElementById('nps-final');
-    npsElement.className = '';
-    if (nps >= 70) {
-        npsElement.classList.add('nps-excellent');
-    } else if (nps >= 50) {
-        npsElement.classList.add('nps-good');
-    } else if (nps >= 0) {
-        npsElement.classList.add('nps-average');
-    } else {
-        npsElement.classList.add('nps-poor');
-    }
-    
-    // Atualizar gráficos
     atualizarGraficos();
 }
 
-// Funções para gráficos
+// Atualizar gráficos
 function atualizarGraficos() {
     criarGraficoNPS();
     criarGraficoQualidade();
     criarGraficoInstrutor();
 }
 
+// Limpar gráficos
 function limparGraficos() {
     if (npsChart) {
         npsChart.destroy();
@@ -552,54 +525,38 @@ function limparGraficos() {
     }
 }
 
+// Criar gráfico NPS
 function criarGraficoNPS() {
     const ctx = document.getElementById('npsChart');
-    if (!ctx) return;
+    if (!ctx || pesquisas.length === 0) return;
     
-    if (npsChart) {
-        npsChart.destroy();
-    }
+    if (npsChart) npsChart.destroy();
     
-    const promotores = pesquisas.filter(p => p.nps >= 9).length;
-    const neutros = pesquisas.filter(p => p.nps >= 7 && p.nps <= 8).length;
-    const detratores = pesquisas.filter(p => p.nps <= 6).length;
+    const npsData = Array(11).fill(0);
+    pesquisas.forEach(p => npsData[p.nps]++);
     
     npsChart = new Chart(ctx, {
         type: 'bar',
         data: {
-            labels: ['Detratores (0-6)', 'Neutros (7-8)', 'Promotores (9-10)'],
+            labels: ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10'],
             datasets: [{
-                label: 'Número de Respostas',
-                data: [detratores, neutros, promotores],
-                backgroundColor: [
-            '#F37021',  // Laranja para detratores
-            '#ffa500',  // Laranja claro para neutros  
-            '#00578E'   // Azul para promotores
-        ],
-        borderColor: [
-            '#e55a00',
-            '#ff8c00',
-            '#003d66'
-        ],
-                borderWidth: 2
+                label: 'Respostas',
+                data: npsData,
+                backgroundColor: npsData.map((_, index) => {
+                    if (index <= 6) return '#ff6b6b'; // Detratores
+                    if (index <= 8) return '#feca57'; // Neutros
+                    return '#48ca48'; // Promotores
+                }),
+                borderColor: npsData.map((_, index) => {
+                    if (index <= 6) return '#ee5a52';
+                    if (index <= 8) return '#ff9ff3';
+                    return '#40a040';
+                }),
+                borderWidth: 1
             }]
         },
         options: {
             responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-                legend: {
-                    display: false
-                },
-                title: {
-                    display: true,
-                    text: 'Distribuição NPS',
-                    font: {
-                        size: 16,
-                        weight: 'bold'
-                    }
-                }
-            },
             scales: {
                 y: {
                     beginAtZero: true,
@@ -607,371 +564,312 @@ function criarGraficoNPS() {
                         stepSize: 1
                     }
                 }
+            },
+            plugins: {
+                legend: {
+                    display: false
+                }
             }
         }
     });
 }
 
+// Criar gráfico de qualidade do evento
 function criarGraficoQualidade() {
-    const ctx = document.getElementById('qualidadeChart');
-    if (!ctx) return;
+    const ctx = document.getElementById('qualityChart');
+    if (!ctx || pesquisas.length === 0) return;
     
-    if (qualidadeChart) {
-        qualidadeChart.destroy();
-    }
+    if (qualidadeChart) qualidadeChart.destroy();
     
-    const qualidadeCount = {};
-    pesquisas.forEach(p => {
-        qualidadeCount[p.qualidade] = (qualidadeCount[p.qualidade] || 0) + 1;
-    });
-    
-    const labels = Object.keys(qualidadeCount);
-    const data = Object.values(qualidadeCount);
-    const colors = ['#00578E', '#F37021', '#0066a3', '#e55a00', '#003d66'];
-    
-    qualidadeChart = new Chart(ctx, {
-        type: 'pie',
-        data: {
-            labels: labels,
-            datasets: [{
-                data: data,
-                backgroundColor: colors.slice(0, labels.length),
-                borderColor: '#ffffff',
-                borderWidth: 2
-            }]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-                legend: {
-                    position: 'bottom',
-                    labels: {
-                        padding: 20,
-                        usePointStyle: true
-                    }
-                },
-                title: {
-                    display: true,
-                    text: 'Avaliação da Qualidade',
-                    font: {
-                        size: 16,
-                        weight: 'bold'
-                    }
-                }
-            }
-        }
-    });
-}
-
-function criarGraficoInstrutor() {
-    const ctx = document.getElementById('instrutorChart');
-    if (!ctx) return;
-    
-    if (instrutorChart) {
-        instrutorChart.destroy();
-    }
-    
-    const instrutorCount = {};
-    pesquisas.forEach(p => {
-        instrutorCount[p.instrutor] = (instrutorCount[p.instrutor] || 0) + 1;
-    });
-    
-    const labels = Object.keys(instrutorCount);
-    const data = Object.values(instrutorCount);
-    const colors = ['#F37021', '#00578E', '#0066a3', '#e55a00', '#003d66'];
-    
-    instrutorChart = new Chart(ctx, {
-        type: 'pie',
-        data: {
-            labels: labels,
-            datasets: [{
-                data: data,
-                backgroundColor: colors.slice(0, labels.length),
-                borderColor: '#ffffff',
-                borderWidth: 2
-            }]
-        },
-        options: {
-            responsive: true,
-            maintainAspectRatio: false,
-            plugins: {
-                legend: {
-                    position: 'bottom',
-                    labels: {
-                        padding: 20,
-                        usePointStyle: true
-                    }
-                },
-                title: {
-                    display: true,
-                    text: 'Avaliação do Instrutor',
-                    font: {
-                        size: 16,
-                        weight: 'bold'
-                    }
-                }
-            }
-        }
-    });
-}
-
-function limparRespostasPesquisa() {
-    if (confirm('Tem certeza que deseja limpar todas as respostas da pesquisa? Esta ação não pode ser desfeita.')) {
-        pesquisas = [];
-        salvarDados();
-        
-        // Resetar exibição dos resultados
-        document.getElementById('nps-final').textContent = '-';
-        document.getElementById('promotores').textContent = '0';
-        document.getElementById('neutros').textContent = '0';
-        document.getElementById('detratores').textContent = '0';
-        document.getElementById('total-respostas').textContent = '0';
-        
-        // Remover classes de cor do NPS
-        const npsElement = document.getElementById('nps-final');
-        npsElement.className = '';
-        
-        alert('Todas as respostas da pesquisa foram removidas com sucesso!');
-    }
-}
-
-// === PERSISTÊNCIA DE DADOS ===
-
-function salvarDados() {
-    if (isSupabaseReady) {
-        // Dados já são salvos automaticamente no Supabase
-        return;
-    }
-    
-    // Fallback para localStorage
-    const dados = {
-        participantes: participantes,
-        pesquisas: pesquisas
+    // Contar avaliações de qualidade
+    const qualidadeCount = {
+        'excelente': 0,
+        'muito-bom': 0,
+        'bom': 0,
+        'regular': 0,
+        'ruim': 0
     };
     
-    localStorage.setItem('sistemaPresenca', JSON.stringify(dados));
+    pesquisas.forEach(p => {
+        if (p.qualidade && qualidadeCount.hasOwnProperty(p.qualidade)) {
+            qualidadeCount[p.qualidade]++;
+        }
+    });
+    
+    qualidadeChart = new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+            labels: ['Excelente', 'Muito Bom', 'Bom', 'Regular', 'Ruim'],
+            datasets: [{
+                data: [
+                    qualidadeCount['excelente'],
+                    qualidadeCount['muito-bom'],
+                    qualidadeCount['bom'],
+                    qualidadeCount['regular'],
+                    qualidadeCount['ruim']
+                ],
+                backgroundColor: [
+                    '#4CAF50',
+                    '#8BC34A',
+                    '#FFC107',
+                    '#FF9800',
+                    '#F44336'
+                ]
+            }]
+        },
+        options: {
+            responsive: true,
+            plugins: {
+                legend: {
+                    position: 'bottom'
+                }
+            }
+        }
+    });
 }
 
-// Função para atualizar o indicador de presença
+// Criar gráfico de instrutor
+function criarGraficoInstrutor() {
+    const ctx = document.getElementById('instrutorChart');
+    if (!ctx || pesquisas.length === 0) return;
+    
+    if (instrutorChart) instrutorChart.destroy();
+    
+    // Contar avaliações do instrutor
+    const instrutorCount = {
+        'excelente': 0,
+        'muito-bom': 0,
+        'bom': 0,
+        'regular': 0,
+        'ruim': 0
+    };
+    
+    pesquisas.forEach(p => {
+        if (p.instrutor && instrutorCount.hasOwnProperty(p.instrutor)) {
+            instrutorCount[p.instrutor]++;
+        }
+    });
+    
+    instrutorChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: ['Excelente', 'Muito Bom', 'Bom', 'Regular', 'Ruim'],
+            datasets: [{
+                label: 'Avaliação do Instrutor',
+                data: [
+                    instrutorCount['excelente'],
+                    instrutorCount['muito-bom'],
+                    instrutorCount['bom'],
+                    instrutorCount['regular'],
+                    instrutorCount['ruim']
+                ],
+                backgroundColor: [
+                    '#4CAF50',
+                    '#8BC34A',
+                    '#FFC107',
+                    '#FF9800',
+                    '#F44336'
+                ],
+                borderColor: [
+                    '#388E3C',
+                    '#689F38',
+                    '#F57C00',
+                    '#E65100',
+                    '#D32F2F'
+                ],
+                borderWidth: 1
+            }]
+        },
+        options: {
+            responsive: true,
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    ticks: {
+                        stepSize: 1
+                    }
+                }
+            },
+            plugins: {
+                legend: {
+                    display: false
+                }
+            }
+        }
+    });
+}
+
+// Limpar respostas da pesquisa
+function limparRespostasPesquisa() {
+    if (confirm('Tem certeza que deseja limpar todas as respostas da pesquisa?')) {
+        try {
+            if (window.databaseService && !window.databaseService.isLocalStorage) {
+                // Limpar do SQLite
+                window.databaseService.clearSurveyResponses();
+            }
+            
+            pesquisas = [];
+            salvarDados();
+            
+            atualizarResultadosPesquisa();
+            limparGraficos();
+            
+            alert('Respostas da pesquisa foram limpas.');
+            
+        } catch (error) {
+            console.error('Erro ao limpar pesquisas:', error);
+            alert('Erro ao limpar pesquisas. Tente novamente.');
+        }
+    }
+}
+
+// Salvar dados no localStorage
+function salvarDados() {
+    try {
+        const dados = {
+            participantes: participantes,
+            pesquisas: pesquisas,
+            timestamp: new Date().toISOString()
+        };
+        localStorage.setItem('sistemaPresenca', JSON.stringify(dados));
+    } catch (error) {
+        console.error('Erro ao salvar dados:', error);
+    }
+}
+
+// Atualizar indicador de presença
 function atualizarIndicadorPresenca() {
-    const presentes = participantes.filter(p => p.presente).length;
-    const ausentes = participantes.length - presentes;
-    const percentual = participantes.length > 0 ? Math.round((presentes / participantes.length) * 100) : 0;
+    const presentes = participantes.filter(p => p.presente || p.present).length;
+    const total = participantes.length;
+    const ausentes = total - presentes;
+    const percentualPresenca = total > 0 ? Math.round((presentes / total) * 100) : 0;
     
-    // Atualizar contadores
-    document.getElementById('presentes-count').textContent = presentes;
-    document.getElementById('ausentes-count').textContent = ausentes;
-    document.getElementById('percentual-presenca').textContent = percentual + '%';
+    // Atualizar elementos do módulo principal
+    const totalElement = document.getElementById('total-participantes');
+    const presentesElement = document.getElementById('total-presentes');
     
-    // Atualizar gráfico
+    if (totalElement) totalElement.textContent = total;
+    if (presentesElement) presentesElement.textContent = presentes;
+    
+    // Atualizar elementos do indicador de presença (admin)
+    const presentesCountElement = document.getElementById('presentes-count');
+    const ausentesCountElement = document.getElementById('ausentes-count');
+    const percentualPresencaElement = document.getElementById('percentual-presenca');
+    
+    if (presentesCountElement) presentesCountElement.textContent = presentes;
+    if (ausentesCountElement) ausentesCountElement.textContent = ausentes;
+    if (percentualPresencaElement) percentualPresencaElement.textContent = `${percentualPresenca}%`;
+    
+    // Atualizar gráfico de presença se existir
     atualizarGraficoPresenca(presentes, ausentes);
 }
 
-// Função para criar/atualizar gráfico de presença
+// Atualizar gráfico de presença
 function atualizarGraficoPresenca(presentes, ausentes) {
-    const canvas = document.getElementById('presenceChart');
-    const ctx = canvas.getContext('2d');
+    const ctx = document.getElementById('presenceChart');
+    if (!ctx) return;
     
-    // Limpar canvas
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    if (window.presencaChart) {
+        window.presencaChart.destroy();
+    }
     
-    if (presentes === 0 && ausentes === 0) {
-        // Mostrar mensagem quando não há dados
-        ctx.fillStyle = '#00578E';
-        ctx.font = '16px Arial';
-        ctx.textAlign = 'center';
-        ctx.fillText('Nenhum participante cadastrado', canvas.width / 2, canvas.height / 2);
+    window.presencaChart = new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+            labels: ['Presentes', 'Ausentes'],
+            datasets: [{
+                data: [presentes, ausentes],
+                backgroundColor: ['#28a745', '#dc3545'],
+                borderWidth: 2
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    position: 'bottom'
+                }
+            }
+        }
+    });
+}
+
+// Filtrar participantes
+function filtrarParticipantes() {
+    const filtroElement = document.getElementById('filtro-participantes');
+    const statusFiltroElement = document.getElementById('filtro-status');
+    
+    if (!filtroElement || !statusFiltroElement) {
+        console.error('Elementos de filtro não encontrados');
         return;
     }
     
-    const total = presentes + ausentes;
-    const centerX = canvas.width / 2;
-    const centerY = canvas.height / 2;
-    const radius = Math.min(centerX, centerY) - 20;
+    const filtro = filtroElement.value.toLowerCase();
+    const statusFiltro = statusFiltroElement.value;
     
-    // Desenhar gráfico de pizza
-    let startAngle = -Math.PI / 2;
-    
-    // Fatia dos presentes
-    if (presentes > 0) {
-        const presentesAngle = (presentes / total) * 2 * Math.PI;
-        ctx.beginPath();
-        ctx.moveTo(centerX, centerY);
-        ctx.arc(centerX, centerY, radius, startAngle, startAngle + presentesAngle);
-        ctx.closePath();
-        ctx.fillStyle = '#00578E';
-        ctx.fill();
-        startAngle += presentesAngle;
-    }
-    
-    // Fatia dos ausentes
-    if (ausentes > 0) {
-        const ausentesAngle = (ausentes / total) * 2 * Math.PI;
-        ctx.beginPath();
-        ctx.moveTo(centerX, centerY);
-        ctx.arc(centerX, centerY, radius, startAngle, startAngle + ausentesAngle);
-        ctx.closePath();
-        ctx.fillStyle = '#F37021';
-        ctx.fill();
-    }
-    
-    // Desenhar borda
-    ctx.beginPath();
-    ctx.arc(centerX, centerY, radius, 0, 2 * Math.PI);
-    ctx.strokeStyle = '#dee2e6';
-    ctx.lineWidth = 2;
-    ctx.stroke();
-}
-
-// Função para filtrar participantes por nome
-function filtrarParticipantes() {
-    const pesquisa = document.getElementById('pesquisa-participante').value.toLowerCase();
-    const clearBtn = document.getElementById('clear-search');
-    const participantItems = document.querySelectorAll('.participant-item');
-    let resultadosEncontrados = 0;
-    
-    // Mostrar/ocultar botão de limpar pesquisa
-    if (pesquisa.length > 0) {
-        clearBtn.style.display = 'block';
-    } else {
-        clearBtn.style.display = 'none';
-    }
-    
-    // Filtrar participantes
-    participantItems.forEach(item => {
-        const nome = item.querySelector('.participant-name').textContent.toLowerCase();
-        if (nome.includes(pesquisa)) {
-            item.classList.remove('hidden');
-            resultadosEncontrados++;
-        } else {
-            item.classList.add('hidden');
+    const participantesFiltrados = participantes.filter(p => {
+        const nomeMatch = (p.nome || p.name || '').toLowerCase().includes(filtro);
+        const deptoMatch = (p.departamento || p.department || '').toLowerCase().includes(filtro);
+        const textoMatch = nomeMatch || deptoMatch;
+        
+        let statusMatch = true;
+        if (statusFiltro === 'presente') {
+            statusMatch = p.presente;
+        } else if (statusFiltro === 'ausente') {
+            statusMatch = !p.presente;
         }
+        
+        return textoMatch && statusMatch;
     });
     
-    // Mostrar mensagem quando não há resultados
-    let noResultsMsg = document.querySelector('.no-results');
-    if (resultadosEncontrados === 0 && pesquisa.length > 0 && participantItems.length > 0) {
-        if (!noResultsMsg) {
-            noResultsMsg = document.createElement('div');
-            noResultsMsg.className = 'no-results';
-            noResultsMsg.innerHTML = `
-                <i class="fas fa-search"></i>
-                <p>Nenhum participante encontrado para "${pesquisa}"</p>
-            `;
-            document.getElementById('lista-participantes').appendChild(noResultsMsg);
-        } else {
-            noResultsMsg.innerHTML = `
-                <i class="fas fa-search"></i>
-                <p>Nenhum participante encontrado para "${pesquisa}"</p>
-            `;
-            noResultsMsg.style.display = 'block';
-        }
-    } else if (noResultsMsg) {
-        noResultsMsg.style.display = 'none';
-    }
+    // Atualizar lista com participantes filtrados
+    const lista = document.getElementById('lista-participantes');
+    if (!lista) return;
+    
+    lista.innerHTML = '';
+    
+    participantesFiltrados.forEach(participante => {
+        const li = document.createElement('li');
+        li.className = `participante ${participante.presente ? 'presente' : 'ausente'}`;
+        
+        li.innerHTML = `
+            <div class="info-participante">
+                <span class="nome">${participante.nome || participante.name}</span>
+                <span class="departamento">${participante.departamento || participante.department}</span>
+                ${participante.presente && participante.horarioCheckin ? 
+                    `<span class="horario">Check-in: ${new Date(participante.horarioCheckin).toLocaleTimeString()}</span>` : ''}
+            </div>
+            <div class="acoes-participante">
+                <button onclick="togglePresenca(${participante.id})" class="btn-presenca">
+                    ${participante.presente ? 'Marcar Ausente' : 'Marcar Presente'}
+                </button>
+                <button onclick="removerParticipante(${participante.id})" class="btn-remover">Remover</button>
+            </div>
+        `;
+        
+        lista.appendChild(li);
+    });
 }
 
-// Função para limpar pesquisa
+// Limpar pesquisa
 function limparPesquisa() {
-    document.getElementById('pesquisa-participante').value = '';
-    document.getElementById('clear-search').style.display = 'none';
+    const filtroElement = document.getElementById('filtro-participantes');
+    const statusElement = document.getElementById('filtro-status');
     
-    // Mostrar todos os participantes
-    const participantItems = document.querySelectorAll('.participant-item');
-    participantItems.forEach(item => {
-        item.classList.remove('hidden');
-    });
+    if (filtroElement) filtroElement.value = '';
+    if (statusElement) statusElement.value = 'todos';
     
-    // Ocultar mensagem de "não encontrado"
-    const noResultsMsg = document.querySelector('.no-results');
-    if (noResultsMsg) {
-        noResultsMsg.style.display = 'none';
-    }
+    atualizarListaParticipantes();
 }
 
-async function carregarDados() {
-    try {
-        if (isSupabaseReady) {
-            // Carregar do Supabase
-            const participantesSupabase = await window.supabaseService.getParticipants();
-            const pesquisasSupabase = await window.supabaseService.getSurveys();
-            
-            // Converter formato Supabase para formato local
-            participantes = participantesSupabase.map(p => ({
-                id: p.id,
-                nome: p.name,
-                departamento: p.department || 'Não informado',
-                presente: p.present,
-                horarioCheckIn: p.arrival_time ? new Date(p.arrival_time).toLocaleTimeString() : null
-            }));
-            
-            pesquisas = pesquisasSupabase.map(s => ({
-                participantName: s.participant_name,
-                nps: s.nps_score,
-                qualidade: s.quality_rating,
-                instrutor: s.instructor_rating,
-                comentarios: s.comments || ''
-            }));
-            
-            console.log('✅ Dados carregados do Supabase');
-        } else {
-            // Carregar do localStorage
-            const dadosParticipantes = localStorage.getItem('participantes');
-            const dadosPesquisas = localStorage.getItem('pesquisas');
-            
-            if (dadosParticipantes) {
-                participantes = JSON.parse(dadosParticipantes);
-            }
-            
-            if (dadosPesquisas) {
-                pesquisas = JSON.parse(dadosPesquisas);
-            }
-            
-            console.log('📦 Dados carregados do localStorage');
-        }
-        
-        // Atualizar interface
-        atualizarListaParticipantes();
-        atualizarIndicadorPresenca();
-        atualizarResultadosPesquisa();
-        carregarImagemCapa();
-        
-    } catch (error) {
-        console.error('Erro ao carregar dados:', error);
-        
-        // Fallback para localStorage em caso de erro
-        const dadosParticipantes = localStorage.getItem('participantes');
-        const dadosPesquisas = localStorage.getItem('pesquisas');
-        
-        if (dadosParticipantes) {
-            participantes = JSON.parse(dadosParticipantes);
-        }
-        
-        if (dadosPesquisas) {
-            pesquisas = JSON.parse(dadosPesquisas);
-        }
-        
-        atualizarListaParticipantes();
-        atualizarIndicadorPresenca();
-        atualizarResultadosPesquisa();
-        carregarImagemCapa();
-    }
-}
-
-// === UTILITÁRIOS ===
-
-// Permitir adicionar participante com Enter
-// DOMContentLoaded duplicado removido - funcionalidades movidas para o primeiro
-
-// === FUNÇÕES DE UPLOAD EXCEL ===
-
-function processarExcel(event) {
+// Processar arquivo Excel
+async function processarExcel(event) {
     const file = event.target.files[0];
     if (!file) return;
     
     const reader = new FileReader();
-    reader.onload = function(e) {
+    reader.onload = async function(e) {
         try {
             const data = new Uint8Array(e.target.result);
             const workbook = XLSX.read(data, { type: 'array' });
@@ -986,19 +884,30 @@ function processarExcel(event) {
             // Processar dados
             let adicionados = 0;
             let duplicados = 0;
+            let erros = 0;
             
-            jsonData.forEach((row, index) => {
-                // Pular linha de cabeçalho se existir
-                if (index === 0 && (row[0] === 'Nome' || row[0] === 'Nome Completo')) return;
-                
-                const nome = row[0] ? row[0].toString().trim() : '';
-                const departamento = row[1] ? row[1].toString().trim() : 'Não informado';
-                
-                if (nome && nome !== '') {
-                    // Verificar se já existe
-                    if (!participantes.find(p => p.nome.toLowerCase() === nome.toLowerCase())) {
+            // Mostrar progresso
+            const progressDiv = document.createElement('div');
+            progressDiv.innerHTML = '<p>Processando arquivo Excel...</p>';
+            document.body.appendChild(progressDiv);
+            
+            // Processar cada linha (pular cabeçalho)
+            for (let i = 1; i < jsonData.length; i++) {
+                const row = jsonData[i];
+                if (row.length >= 2 && row[0] && row[1]) {
+                    const nome = row[0].toString().trim();
+                    const departamento = row[1].toString().trim();
+                    
+                    // Verificar duplicatas
+                    if (participantes.find(p => p.nome?.toLowerCase() === nome.toLowerCase())) {
+                        duplicados++;
+                        continue;
+                    }
+                    
+                    try {
+                        // Adicionar participante
                         const participante = {
-                            id: Date.now() + Math.random(),
+                            id: Date.now() + i,
                             nome: nome,
                             departamento: departamento,
                             presente: false,
@@ -1007,120 +916,118 @@ function processarExcel(event) {
                         
                         participantes.push(participante);
                         adicionados++;
-                    } else {
-                        duplicados++;
+                        
+                    } catch (error) {
+                        console.error('Erro ao adicionar participante:', error);
+                        erros++;
                     }
                 }
-            });
+            }
+            
+            // Salvar dados
+            salvarDados();
             
             // Atualizar interface
             atualizarListaParticipantes();
             atualizarIndicadorPresenca();
-            salvarDados();
+            
+            // Remover progresso
+            document.body.removeChild(progressDiv);
             
             // Mostrar resultado
-            let mensagem = `Upload concluído!\n`;
-            mensagem += `Participantes adicionados: ${adicionados}\n`;
-            if (duplicados > 0) {
-                mensagem += `Participantes duplicados (ignorados): ${duplicados}`;
-            }
-            
-            alert(mensagem);
-            
-            // Limpar input
-            event.target.value = '';
+            alert(`Importação concluída!\nAdicionados: ${adicionados}\nDuplicados: ${duplicados}\nErros: ${erros}`);
             
         } catch (error) {
             console.error('Erro ao processar Excel:', error);
-            alert('Erro ao processar o arquivo Excel. Verifique se o formato está correto.');
+            alert('Erro ao processar arquivo Excel. Verifique o formato.');
         }
     };
     
     reader.readAsArrayBuffer(file);
 }
 
+// Baixar modelo Excel
 function baixarModeloExcel() {
-    // Criar dados de exemplo
-    const dadosModelo = [
-        ['Nome Completo', 'Departamento'],
+    const dados = [
+        ['Nome', 'Departamento'],
         ['João Silva', 'TI'],
         ['Maria Santos', 'RH'],
-        ['Pedro Oliveira', 'Vendas'],
-        ['Ana Costa', 'Marketing']
+        ['Pedro Oliveira', 'Vendas']
     ];
     
-    // Criar workbook
+    const ws = XLSX.utils.aoa_to_sheet(dados);
     const wb = XLSX.utils.book_new();
-    const ws = XLSX.utils.aoa_to_sheet(dadosModelo);
-    
-    // Adicionar planilha ao workbook
     XLSX.utils.book_append_sheet(wb, ws, 'Participantes');
     
-    // Baixar arquivo
-    XLSX.writeFile(wb, 'modelo-participantes.xlsx');
+    XLSX.writeFile(wb, 'modelo_participantes.xlsx');
 }
 
-// Função para exportar dados (útil para backup)
+// Exportar dados
 function exportarDados() {
-    const dados = {
-        participantes: participantes,
-        pesquisas: pesquisas,
-        exportadoEm: new Date().toLocaleString()
-    };
+    const dados = [
+        ['Nome', 'Departamento', 'Presente', 'Horário Check-in']
+    ];
     
-    const dataStr = JSON.stringify(dados, null, 2);
-    const dataBlob = new Blob([dataStr], {type: 'application/json'});
+    participantes.forEach(p => {
+        dados.push([
+            p.nome || p.name,
+            p.departamento || p.department,
+            p.presente ? 'Sim' : 'Não',
+            p.presente && p.horarioCheckin ? new Date(p.horarioCheckin).toLocaleString() : ''
+        ]);
+    });
     
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(dataBlob);
-    link.download = `dados-treinamento-${new Date().toISOString().split('T')[0]}.json`;
-    link.click();
+    const ws = XLSX.utils.aoa_to_sheet(dados);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Participantes');
+    
+    XLSX.writeFile(wb, `participantes_${new Date().toISOString().split('T')[0]}.xlsx`);
 }
 
-// Função para limpar todos os dados
+// Limpar lista de participantes
 async function limparListaParticipantes() {
-    // Verificar se há participantes na lista
-    if (participantes.length === 0) {
-        alert('A lista já está vazia.');
-        return;
-    }
-    
-    // Mostrar alerta de confirmação
-    const confirmacao = confirm(
-        `⚠️ ATENÇÃO!\n\nTodos os dados serão apagados permanentemente:\n\n` +
-        `• ${participantes.length} participante(s)\n` +
-        `• Registros de presença\n` +
-        `• Histórico de sorteios\n` +
-        `• Pesquisas de satisfação\n\n` +
-        `Esta ação não pode ser desfeita.\n\n` +
-        `Deseja realmente limpar todos os dados?`
-    );
-    
-    if (confirmacao) {
+    if (confirm('Tem certeza que deseja limpar toda a lista de participantes?')) {
         try {
-            // Limpar todos os dados
+            if (window.databaseService && !window.databaseService.isLocalStorage) {
+                // Limpar do SQLite
+                window.databaseService.clearParticipants();
+            }
+            
+            participantes = [];
+            salvarDados();
+            
+            atualizarListaParticipantes();
+            atualizarIndicadorPresenca();
+            
+            alert('Lista de participantes foi limpa.');
+            
+        } catch (error) {
+            console.error('Erro ao limpar participantes:', error);
+            alert('Erro ao limpar participantes. Tente novamente.');
+        }
+    }
+}
+
+// Limpar todos os dados
+async function limparDados() {
+    if (confirm('Tem certeza que deseja limpar TODOS os dados? Esta ação não pode ser desfeita.')) {
+        try {
+            if (window.databaseService && !window.databaseService.isLocalStorage) {
+                // Limpar do SQLite
+                window.databaseService.clearAll();
+            }
+            
             participantes = [];
             pesquisas = [];
             
-            if (isSupabaseReady) {
-                // Limpar dados no Supabase
-                await window.supabaseService.clearAllData();
-            } else {
-                // Limpar localStorage
-                localStorage.removeItem('participantes');
-                localStorage.removeItem('pesquisas');
-                localStorage.removeItem('imagemCapa');
-            }
+            localStorage.removeItem('sistemaPresenca');
             
-            // Atualizar interface
             atualizarListaParticipantes();
-            atualizarIndicadorPresenca();
             atualizarResultadosPesquisa();
+            atualizarIndicadorPresenca();
+            limparGraficos();
             
-            // Remover imagem de capa
-            removerImagemCapa();
-            
-            alert('✅ Todos os dados foram limpos com sucesso!');
+            alert('Todos os dados foram limpos.');
             
         } catch (error) {
             console.error('Erro ao limpar dados:', error);
@@ -1129,35 +1036,9 @@ async function limparListaParticipantes() {
     }
 }
 
-async function limparDados() {
-    try {
-        if (isSupabaseReady) {
-            await window.supabaseService.clearAllData();
-        } else {
-            localStorage.clear();
-        }
-        
-        // Resetar variáveis
-        participantes = [];
-        pesquisas = [];
-        
-        // Atualizar interface
-        atualizarListaParticipantes();
-        atualizarIndicadorPresenca();
-        atualizarResultadosPesquisa();
-        
-        alert('Dados limpos com sucesso!');
-        
-    } catch (error) {
-        console.error('Erro ao limpar dados:', error);
-        alert('Erro ao limpar dados. Tente novamente.');
-    }
-}
-
-// Funções para gerenciamento de imagem de capa
+// Configurar upload de imagem
 function configurarUploadImagem() {
-    const uploadInput = document.getElementById('cover-upload');
-    
+    const uploadInput = document.getElementById('upload-imagem');
     if (uploadInput) {
         uploadInput.addEventListener('change', function(event) {
             const file = event.target.files[0];
@@ -1166,256 +1047,185 @@ function configurarUploadImagem() {
             }
         });
     }
-    
-    // Carregar imagem salva se existir
-    carregarImagemCapa();
 }
 
+// Processar imagem de capa
 function processarImagemCapa(file) {
-    // Validar tipo de arquivo
     if (!file.type.startsWith('image/')) {
-        alert('❌ Por favor, selecione apenas arquivos de imagem.');
-        return;
-    }
-    
-    // Validar tamanho (máximo 5MB)
-    if (file.size > 5 * 1024 * 1024) {
-        alert('❌ A imagem deve ter no máximo 5MB.');
+        alert('Por favor, selecione um arquivo de imagem válido.');
         return;
     }
     
     const reader = new FileReader();
     reader.onload = function(e) {
-        const imagemBase64 = e.target.result;
+        const imagemSrc = e.target.result;
         
         // Salvar no localStorage
-        localStorage.setItem('imagemCapa', imagemBase64);
+        localStorage.setItem('imagemCapa', imagemSrc);
         
-        // Exibir preview
-        exibirImagemCapa(imagemBase64);
+        // Exibir imagem
+        exibirImagemCapa(imagemSrc);
         
-        // Aplicar também no cabeçalho
-        aplicarImagemCabecalho(imagemBase64);
-        
-        alert('✅ Imagem de capa atualizada com sucesso!');
+        // Aplicar no cabeçalho
+        aplicarImagemCabecalho(imagemSrc);
     };
     
     reader.readAsDataURL(file);
 }
 
+// Exibir imagem de capa
 function exibirImagemCapa(imagemSrc) {
-    const preview = document.getElementById('cover-preview');
-    const noCover = document.getElementById('no-cover');
-    const removeBtn = document.getElementById('remove-cover');
-    
-    if (preview && noCover && removeBtn) {
-        preview.src = imagemSrc;
-        preview.style.display = 'block';
-        noCover.style.display = 'none';
-        removeBtn.style.display = 'inline-block';
+    const preview = document.getElementById('preview-imagem');
+    if (preview) {
+        preview.innerHTML = `
+            <img src="${imagemSrc}" alt="Imagem de Capa" style="max-width: 200px; max-height: 150px;">
+            <button onclick="removerImagemCapa()" class="btn-remover">Remover Imagem</button>
+        `;
     }
 }
 
+// Remover imagem de capa
 function removerImagemCapa() {
     if (confirm('Tem certeza que deseja remover a imagem de capa?')) {
-        // Remover do localStorage
         localStorage.removeItem('imagemCapa');
         
-        // Atualizar interface
-        const preview = document.getElementById('cover-preview');
-        const noCover = document.getElementById('no-cover');
-        const removeBtn = document.getElementById('remove-cover');
-        
-        if (preview && noCover && removeBtn) {
-            preview.style.display = 'none';
-            preview.src = '';
-            noCover.style.display = 'flex';
-            removeBtn.style.display = 'none';
+        const preview = document.getElementById('preview-imagem');
+        if (preview) {
+            preview.innerHTML = '<p>Nenhuma imagem selecionada</p>';
         }
         
-        // Remover também do cabeçalho
-        const headerImage = document.getElementById('header-cover-image');
-        const headerCover = document.getElementById('header-cover');
-        if (headerImage && headerCover) {
-            headerImage.style.display = 'none';
-            headerImage.src = '';
-            headerCover.style.display = 'none';
+        // Remover do cabeçalho
+        const header = document.querySelector('.header');
+        if (header) {
+            header.style.backgroundImage = '';
+            header.style.backgroundColor = '';
         }
-        
-        alert('✅ Imagem de capa removida com sucesso!');
     }
 }
 
+// Carregar imagem de capa
 function carregarImagemCapa() {
-     const imagemSalva = localStorage.getItem('imagemCapa');
-     if (imagemSalva) {
-         exibirImagemCapa(imagemSalva);
-         // Também aplicar no cabeçalho
-         aplicarImagemCabecalho(imagemSalva);
-     }
- }
+    const imagemSalva = localStorage.getItem('imagemCapa');
+    if (imagemSalva) {
+        exibirImagemCapa(imagemSalva);
+        aplicarImagemCabecalho(imagemSalva);
+    }
+}
 
-// Funções de autenticação do administrador
-const SENHA_ADMIN = "admin123"; // Senha padrão (pode ser alterada)
+// Sistema de autenticação admin
+const SENHA_ADMIN = "admin123";
 let currentUser = null;
 
 function showAdminLogin() {
-    document.getElementById('admin-login-modal').style.display = 'flex';
-    document.getElementById('admin-password').focus();
+    const modalElement = document.getElementById('admin-login-modal');
+    if (modalElement) modalElement.style.display = 'block';
 }
 
 function closeAdminLogin() {
-    document.getElementById('admin-login-modal').style.display = 'none';
-    document.getElementById('admin-password').value = '';
-    document.getElementById('login-error').style.display = 'none';
+    const modalElement = document.getElementById('admin-login-modal');
+    if (modalElement) modalElement.style.display = 'none';
 }
 
 async function autenticarAdmin(event) {
     event.preventDefault();
     
-    const senha = document.getElementById('admin-password').value;
-    const loginError = document.getElementById('login-error');
+    const senhaElement = document.getElementById('admin-password');
     
-    try {
-        if (isSupabaseReady) {
-            // Usar Supabase Auth para autenticação
-            const adminEmail = 'admin@sistema.com'; // Email padrão do admin
-            
-            try {
-                const { user } = await window.supabaseService.signIn(adminEmail, senha);
-                currentUser = user;
-                
-                // Login bem-sucedido
-                document.getElementById('admin-login-modal').style.display = 'none';
-                showModule('admin');
-                document.getElementById('admin-panel').style.display = 'block';
-                
-                // Salvar estado de login (sessão)
-                sessionStorage.setItem('adminLoggedIn', 'true');
-                sessionStorage.setItem('adminUser', JSON.stringify(user));
-                
-                // Limpar campo de senha
-                document.getElementById('admin-password').value = '';
-                loginError.style.display = 'none';
-                
-            } catch (authError) {
-                // Se falhar no Supabase, usar autenticação local como fallback
-                if (senha === SENHA_ADMIN) {
-                    loginSuccess();
-                } else {
-                    loginFailed();
-                }
-            }
-        } else {
-            // Usar autenticação local
-            if (senha === SENHA_ADMIN) {
-                loginSuccess();
-            } else {
-                loginFailed();
-            }
-        }
-    } catch (error) {
-        console.error('Erro na autenticação:', error);
+    if (!senhaElement) {
+        alert('Campo de senha não encontrado.');
+        return;
+    }
+    
+    const senha = senhaElement.value;
+    
+    if (senha === SENHA_ADMIN) {
+        currentUser = { role: 'admin', loginTime: new Date() };
+        localStorage.setItem('adminSession', JSON.stringify(currentUser));
+        
+        closeAdminLogin();
+        loginSuccess();
+        
+        senhaElement.value = '';
+    } else {
         loginFailed();
-    }
-    
-    function loginSuccess() {
-        document.getElementById('admin-login-modal').style.display = 'none';
-        showModule('admin');
-        document.getElementById('admin-panel').style.display = 'block';
-        sessionStorage.setItem('adminLoggedIn', 'true');
-        document.getElementById('admin-password').value = '';
-        loginError.style.display = 'none';
-    }
-    
-    function loginFailed() {
-        loginError.style.display = 'block';
-        document.getElementById('admin-password').value = '';
-        setTimeout(() => {
-            loginError.style.display = 'none';
-        }, 3000);
     }
 }
 
+function loginSuccess() {
+    const adminPanel = document.getElementById('admin-panel');
+    const loginBtn = document.getElementById('admin-login-btn');
+    const logoutBtn = document.getElementById('admin-logout-btn');
+    
+    if (adminPanel) {
+        adminPanel.style.display = 'block';
+        // Garantir que o módulo administrador seja exibido
+        showModule('admin');
+    }
+    if (loginBtn) loginBtn.style.display = 'none';
+    if (logoutBtn) logoutBtn.style.display = 'inline-block';
+    
+    alert('Login realizado com sucesso!');
+}
+
+function loginFailed() {
+    alert('Senha incorreta!');
+    const senhaElement = document.getElementById('admin-password');
+    if (senhaElement) senhaElement.value = '';
+}
+
 async function logoutAdmin() {
-    if (confirm('Tem certeza que deseja sair do painel administrativo?')) {
-        try {
-            if (isSupabaseReady && currentUser) {
-                await window.supabaseService.signOut();
-                currentUser = null;
-            }
-            
-            // Ocultar painel administrativo
-            document.getElementById('admin-panel').style.display = 'none';
-            
-            // Voltar para o módulo de presença
-            showModule('presenca');
-            
-            // Remover estado de login
-            sessionStorage.removeItem('adminLoggedIn');
-            sessionStorage.removeItem('adminUser');
-            
-        } catch (error) {
-            console.error('Erro no logout:', error);
-            // Mesmo com erro, fazer logout local
-            document.getElementById('admin-panel').style.display = 'none';
-            showModule('presenca');
-            sessionStorage.removeItem('adminLoggedIn');
-            sessionStorage.removeItem('adminUser');
-        }
+    if (confirm('Tem certeza que deseja fazer logout?')) {
+        currentUser = null;
+        localStorage.removeItem('adminSession');
+        
+        const adminPanel = document.getElementById('admin-panel');
+        const loginBtn = document.getElementById('admin-login-btn');
+        const logoutBtn = document.getElementById('admin-logout-btn');
+        
+        if (adminPanel) adminPanel.style.display = 'none';
+        if (loginBtn) loginBtn.style.display = 'inline-block';
+        if (logoutBtn) logoutBtn.style.display = 'none';
+        
+        alert('Logout realizado com sucesso!');
     }
 }
 
 async function verificarLoginAdmin() {
-    const adminLoggedIn = sessionStorage.getItem('adminLoggedIn');
-    
-    if (adminLoggedIn === 'true') {
-        if (isSupabaseReady) {
-            // Verificar se o usuário ainda está autenticado no Supabase
-            try {
-                const user = await window.supabaseService.getCurrentUser();
-                if (user) {
-                    currentUser = user;
-                    document.getElementById('admin-panel').style.display = 'block';
-                } else {
-                    // Usuário não está mais autenticado, fazer logout
-                    sessionStorage.removeItem('adminLoggedIn');
-                    sessionStorage.removeItem('adminUser');
-                }
-            } catch (error) {
-                console.error('Erro ao verificar autenticação:', error);
+    const session = localStorage.getItem('adminSession');
+    if (session) {
+        try {
+            currentUser = JSON.parse(session);
+            const loginTime = new Date(currentUser.loginTime);
+            const now = new Date();
+            const diffHours = (now - loginTime) / (1000 * 60 * 60);
+            
+            if (diffHours < 24) {
+                loginSuccess();
+            } else {
+                localStorage.removeItem('adminSession');
+                currentUser = null;
             }
-        } else {
-            // Usar verificação local
-            document.getElementById('admin-panel').style.display = 'block';
+        } catch (error) {
+            localStorage.removeItem('adminSession');
+            currentUser = null;
         }
     }
 }
 
-// Configurar listener para mudanças de autenticação
 async function setupAuthListener() {
-    if (isSupabaseReady) {
-        window.supabaseService.onAuthStateChange((event, session) => {
-            if (event === 'SIGNED_OUT') {
-                currentUser = null;
-                document.getElementById('admin-panel').style.display = 'none';
-                sessionStorage.removeItem('adminLoggedIn');
-                sessionStorage.removeItem('adminUser');
-                showModule('presenca');
-            } else if (event === 'SIGNED_IN' && session?.user) {
-                currentUser = session.user;
-            }
-        });
-    }
+    // Configurar eventos de autenticação se necessário
 }
 
 function aplicarImagemCabecalho(imagemSrc) {
-    const headerImage = document.getElementById('header-cover-image');
-    const headerCover = document.getElementById('header-cover');
-    
-    if (headerImage && headerCover) {
-        headerImage.src = imagemSrc;
-        headerImage.style.display = 'block';
-        headerCover.style.display = 'block';
+    const header = document.querySelector('.header');
+    if (header) {
+        header.style.backgroundImage = `url(${imagemSrc})`;
+        header.style.backgroundSize = 'cover';
+        header.style.backgroundPosition = 'center';
     }
 }
+
+// Inicializar quando a página carregar
+document.addEventListener('DOMContentLoaded', function() {
+    carregarImagemCapa();
+});
