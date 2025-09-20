@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sistema de Presença - Treinamento Corporativo</title>
+    <link rel="stylesheet" href="styles.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    <!-- Sistema Principal -->
+    <div id="main-system" class="main-system">
+    <div class="container">
+        <header class="header">
+            <div id="header-cover" class="header-cover">
+                <img id="header-cover-image" src="" alt="Imagem de capa">
+            </div>
+            <div class="header-content">
+                <h1><i class="fas fa-clipboard-check"></i> Sistema de Presença</h1>
+                <p>Treinamento Corporativo</p>
+            </div>
+        </header>
+
+        <nav class="navigation">
+            <button class="nav-btn active" onclick="showModule('presenca')">
+                <i class="fas fa-user-check"></i>
+                Lista de Presença
+            </button>
+            <button class="nav-btn" onclick="showModule('grupos')">
+                <i class="fas fa-users"></i>
+                Sorteio de Grupos
+            </button>
+            <button class="nav-btn" onclick="showModule('pesquisa')">
+                <i class="fas fa-poll"></i>
+                Pesquisa de Satisfação
+            </button>
+            <button class="nav-btn admin-btn" onclick="showAdminLogin()">
+                <i class="fas fa-cog"></i>
+                Administrador
+            </button>
+        </nav>
+
+        <!-- Módulo Lista de Presença -->
+        <div id="presenca" class="module active">
+            <div class="module-header">
+                <h2><i class="fas fa-user-check"></i> Lista de Presença</h2>
+                <div class="stats">
+                    <span id="total-participantes">Total: 0</span>
+                    <span id="presentes">Presentes: 0</span>
+                </div>
+            </div>
+            
+            <div class="search-participant">
+                <div class="search-input-container">
+                    <i class="fas fa-search search-icon"></i>
+                    <input type="text" id="pesquisa-participante" placeholder="Pesquisar participante por nome..." onkeyup="filtrarParticipantes()">
+                    <button onclick="limparPesquisa()" class="clear-search-btn" id="clear-search" style="display: none;">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+            </div>
+            
+            <div class="participants-list" id="lista-participantes">
+                <!-- Lista será preenchida dinamicamente -->
+            </div>
+
+            <div class="add-participant">
+                <input type="text" id="nome-participante" placeholder="Nome do participante">
+                <input type="text" id="depto-participante" placeholder="Departamento">
+                <button onclick="adicionarParticipante()">
+                    <i class="fas fa-plus"></i> Adicionar
+                </button>
+                <button onclick="limparListaParticipantes()" class="clear-list-btn">
+                    <i class="fas fa-trash-alt"></i> Limpar Lista
+                </button>
+            </div>
+
+            <div class="excel-upload">
+                <div class="upload-section">
+                    <label for="excel-file" class="upload-label">
+                        <i class="fas fa-file-excel"></i>
+                        Importar Lista do Excel
+                    </label>
+                    <input type="file" id="excel-file" accept=".xlsx,.xls" onchange="processarExcel(event)">
+                    <div class="upload-info">
+                        <small>Formato esperado: Coluna A = Nome Completo, Coluna B = Departamento</small>
+                    </div>
+                </div>
+                <button onclick="baixarModeloExcel()" class="download-template">
+                    <i class="fas fa-download"></i> Baixar Modelo Excel
+                </button>
+            </div>
+        </div>
+
+        <!-- Módulo Sorteio de Grupos -->
+        <div id="grupos" class="module">
+            <div class="module-header">
+                <h2><i class="fas fa-users"></i> Sorteio de Grupos</h2>
+            </div>
+            
+            <div class="group-controls">
+                <label for="num-grupos">Número de grupos:</label>
+                <input type="number" id="num-grupos" min="2" max="10" value="2">
+                
+                <label for="pessoas-por-grupo">Pessoas por grupo:</label>
+                <input type="number" id="pessoas-por-grupo" min="2" max="20" value="3">
+                
+                <button onclick="sortearGrupos()">
+                    <i class="fas fa-random"></i> Sortear Grupos
+                </button>
+            </div>
+
+            <div class="group-info" id="info-grupos">
+                <!-- Informações sobre o sorteio serão exibidas aqui -->
+            </div>
+
+            <div class="groups-result" id="resultado-grupos">
+                <!-- Resultado do sorteio será exibido aqui -->
+            </div>
+        </div>
+
+        <!-- Módulo Pesquisa de Satisfação -->
+        <div id="pesquisa" class="module">
+            <div class="module-header">
+                <h2><i class="fas fa-poll"></i> Pesquisa de Satisfação</h2>
+            </div>
+            
+            <form id="form-pesquisa" class="survey-form">
+                <div class="question-group">
+                    <label>Em uma escala de 0 a 10, o quanto você recomendaria este treinamento para um colega?</label>
+                    <div class="nps-scale">
+                        <div class="scale-labels">
+                            <span>Não recomendaria</span>
+                            <span>Recomendaria totalmente</span>
+                        </div>
+                        <div class="scale-buttons">
+                            <button type="button" class="nps-btn" data-value="0">0</button>
+                            <button type="button" class="nps-btn" data-value="1">1</button>
+                            <button type="button" class="nps-btn" data-value="2">2</button>
+                            <button type="button" class="nps-btn" data-value="3">3</button>
+                            <button type="button" class="nps-btn" data-value="4">4</button>
+                            <button type="button" class="nps-btn" data-value="5">5</button>
+                            <button type="button" class="nps-btn" data-value="6">6</button>
+                            <button type="button" class="nps-btn" data-value="7">7</button>
+                            <button type="button" class="nps-btn" data-value="8">8</button>
+                            <button type="button" class="nps-btn" data-value="9">9</button>
+                            <button type="button" class="nps-btn" data-value="10">10</button>
+                        </div>
+                    </div>
+                    <input type="hidden" id="nps-score" name="nps">
+                </div>
+
+                <div class="question-group">
+                    <label for="qualidade">Como você avalia a qualidade do conteúdo?</label>
+                    <select id="qualidade" name="qualidade" required>
+                        <option value="">Selecione...</option>
+                        <option value="excelente">Excelente</option>
+                        <option value="muito-bom">Muito Bom</option>
+                        <option value="bom">Bom</option>
+                        <option value="regular">Regular</option>
+                        <option value="ruim">Ruim</option>
+                    </select>
+                </div>
+
+                <div class="question-group">
+                    <label for="instrutor">Como você avalia o instrutor?</label>
+                    <select id="instrutor" name="instrutor" required>
+                        <option value="">Selecione...</option>
+                        <option value="excelente">Excelente</option>
+                        <option value="muito-bom">Muito Bom</option>
+                        <option value="bom">Bom</option>
+                        <option value="regular">Regular</option>
+                        <option value="ruim">Ruim</option>
+                    </select>
+                </div>
+
+                <div class="question-group">
+                    <label for="comentarios">Comentários adicionais:</label>
+                    <textarea id="comentarios" name="comentarios" rows="4" placeholder="Deixe seus comentários sobre o treinamento..."></textarea>
+                </div>
+
+                <button type="submit" class="submit-btn">
+                    <i class="fas fa-paper-plane"></i> Enviar Pesquisa
+                </button>
+            </form>
+        </div>
+
+        <!-- Módulo Administrador -->
+        <div id="admin" class="module">
+            <!-- Painel Administrativo -->
+            <div id="admin-panel" class="admin-panel" style="display: none;">
+                <div class="module-header">
+                    <h2><i class="fas fa-cog"></i> Painel do Administrador</h2>
+                    <button class="logout-btn" onclick="logoutAdmin()">
+                        <i class="fas fa-sign-out-alt"></i> Sair
+                    </button>
+                </div>
+
+            <!-- Seção de Sorteio de Brinde -->
+            <div class="admin-section">
+                <h3><i class="fas fa-gift"></i> Sorteio de Brinde</h3>
+                <div class="prize-controls">
+                    <input type="text" id="nome-brinde" placeholder="Nome do brinde" value="Brinde Especial">
+                    <button onclick="sortearBrinde()">
+                        <i class="fas fa-trophy"></i> Sortear Brinde
+                    </button>
+                </div>
+                <div class="prize-result" id="resultado-brinde">
+                    <!-- Resultado do sorteio será exibido aqui -->
+                </div>
+            </div>
+
+            <!-- Seção de Indicador de Presença -->
+            <div class="admin-section">
+                <h3><i class="fas fa-users-check"></i> Indicador de Presença</h3>
+                <div class="presence-indicator">
+                    <div class="presence-stats">
+                        <div class="stat-card">
+                            <div class="stat-icon">
+                                <i class="fas fa-user-check"></i>
+                            </div>
+                            <div class="stat-info">
+                                <span class="stat-number" id="presentes-count">0</span>
+                                <span class="stat-label">Presentes</span>
+                            </div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-icon">
+                                <i class="fas fa-user-times"></i>
+                            </div>
+                            <div class="stat-info">
+                                <span class="stat-number" id="ausentes-count">0</span>
+                                <span class="stat-label">Ausentes</span>
+                            </div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-icon">
+                                <i class="fas fa-percentage"></i>
+                            </div>
+                            <div class="stat-info">
+                                <span class="stat-number" id="percentual-presenca">0%</span>
+                                <span class="stat-label">Taxa de Presença</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="presence-chart">
+                        <canvas id="presenceChart" width="300" height="150"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Seção de Upload de Imagem de Capa -->
+            <div class="admin-section">
+                <h3><i class="fas fa-image"></i> Imagem de Capa</h3>
+                <div class="upload-section">
+                    <div class="current-cover" id="current-cover">
+                        <img id="cover-preview" src="" alt="Imagem de capa atual" style="display: none;">
+                        <div class="no-cover" id="no-cover">
+                            <i class="fas fa-image"></i>
+                            <p>Nenhuma imagem de capa definida</p>
+                        </div>
+                    </div>
+                    <div class="upload-controls">
+                        <input type="file" id="cover-upload" accept="image/*" style="display: none;">
+                        <button class="upload-btn" onclick="document.getElementById('cover-upload').click()">
+                            <i class="fas fa-upload"></i> Selecionar Imagem
+                        </button>
+                        <button class="remove-btn" id="remove-cover" onclick="removerImagemCapa()" style="display: none;">
+                            <i class="fas fa-trash"></i> Remover Imagem
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Seção de Resultados da Pesquisa -->
+            <div class="admin-section">
+                <div class="module-header">
+                    <h3><i class="fas fa-chart-bar"></i> Resultados da Pesquisa de Satisfação</h3>
+                    <button onclick="limparRespostasPesquisa()" class="clear-survey-btn">
+                        <i class="fas fa-trash-alt"></i> Limpar Respostas
+                    </button>
+                </div>
+                <div class="survey-results" id="resultados-pesquisa">
+                    <div class="results-summary">
+                        <div class="nps-result">
+                            <div class="nps-score-display">
+                                <span>NPS: </span>
+                                <span id="nps-final">-</span>
+                            </div>
+                            <div class="nps-breakdown">
+                                <div class="nps-category promoters">
+                                    <span>Promotores (9-10): </span>
+                                    <span id="promotores">0</span>
+                                </div>
+                                <div class="nps-category neutros">
+                                    <span>Neutros (7-8): </span>
+                                    <span id="neutros">0</span>
+                                </div>
+                                <div class="nps-category detratores">
+                                    <span>Detratores (0-6): </span>
+                                    <span id="detratores">0</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="total-responses">
+                            Total de respostas: <span id="total-respostas">0</span>
+                        </div>
+                    </div>
+                    
+                    <div class="charts-container">
+                        <div class="chart-section">
+                            <h4><i class="fas fa-chart-bar"></i> Distribuição NPS</h4>
+                            <div class="chart-wrapper">
+                                <canvas id="npsChart"></canvas>
+                            </div>
+                        </div>
+                        
+                        <div class="chart-section">
+                            <h4><i class="fas fa-chart-pie"></i> Avaliação da Qualidade</h4>
+                            <div class="chart-wrapper">
+                                <canvas id="qualidadeChart"></canvas>
+                            </div>
+                        </div>
+                        
+                        <div class="chart-section">
+                            <h4><i class="fas fa-chart-pie"></i> Avaliação do Instrutor</h4>
+                            <div class="chart-wrapper">
+                                <canvas id="instrutorChart"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            </div>
+        </div>
+    </div>
+    </div> <!-- Fechamento do main-system -->
+
+    <!-- Modal de Login Administrativo -->
+    <div id="admin-login-modal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <div class="login-header">
+                <i class="fas fa-lock"></i>
+                <h2>Acesso Administrativo</h2>
+                <p>Digite a senha para acessar o painel administrativo</p>
+            </div>
+            <form id="admin-login-form" onsubmit="autenticarAdmin(event)">
+                <div class="password-group">
+                    <input type="password" id="admin-password" placeholder="Senha do administrador" required>
+                    <button type="submit" class="login-btn">
+                        <i class="fas fa-sign-in-alt"></i> Entrar
+                    </button>
+                </div>
+                <div id="login-error" class="login-error" style="display: none;">
+                    <i class="fas fa-exclamation-triangle"></i>
+                    Senha incorreta. Tente novamente.
+                </div>
+            </form>
+            <button class="close-modal" onclick="closeAdminLogin()">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
