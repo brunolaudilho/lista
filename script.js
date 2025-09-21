@@ -251,6 +251,17 @@ async function removerParticipante(id) {
             if (participanteLocal) {
                 console.log(`📋 Participante encontrado na lista local:`, participanteLocal);
                 
+                // Remover do banco de dados SQLite se disponível
+                if (window.databaseService && !window.databaseService.isLocalStorage) {
+                    console.log(`🗄️ Removendo do banco SQLite...`);
+                    const removidoBanco = await window.databaseService.removeParticipant(id);
+                    if (removidoBanco) {
+                        console.log(`✅ Participante ${id} removido do banco SQLite`);
+                    } else {
+                        console.warn(`⚠️ Falha ao remover participante ${id} do banco SQLite`);
+                    }
+                }
+                
                 // Remover dos dados locais
                 const tamanhoAntes = participantes.length;
                 participantes = participantes.filter(p => p.id !== id);
@@ -1058,6 +1069,13 @@ function exportarDados() {
 async function limparListaParticipantes() {
     if (confirm('Tem certeza que deseja limpar toda a lista de participantes? Esta ação não pode ser desfeita.')) {
         try {
+            // Limpar do banco SQLite se disponível
+            if (window.databaseService && !window.databaseService.isLocalStorage) {
+                console.log('🗄️ Limpando participantes do banco SQLite...');
+                await window.databaseService.clearAllData();
+                console.log('✅ Participantes removidos do banco SQLite');
+            }
+            
             participantes = [];
             
             // Atualizar interface
@@ -1077,6 +1095,13 @@ async function limparListaParticipantes() {
 async function limparDados() {
     if (confirm('Tem certeza que deseja limpar TODOS os dados (participantes e pesquisas)? Esta ação não pode ser desfeita.')) {
         try {
+            // Limpar do banco SQLite se disponível
+            if (window.databaseService && !window.databaseService.isLocalStorage) {
+                console.log('🗄️ Limpando todos os dados do banco SQLite...');
+                await window.databaseService.clearAllData();
+                console.log('✅ Todos os dados removidos do banco SQLite');
+            }
+            
             participantes = [];
             pesquisas = [];
             
@@ -1303,16 +1328,24 @@ async function sincronizarDados() {
             // Buscar dados atualizados do banco
             const dadosAtualizados = await window.databaseService.getParticipants();
             
-            // Verificar se há diferenças
-            if (JSON.stringify(participantes) !== JSON.stringify(dadosAtualizados)) {
-                console.log('🔄 Sincronizando dados...');
+            // Verificar se há diferenças (comparação mais robusta)
+            const participantesAtuais = JSON.stringify(participantes.sort((a, b) => a.id - b.id));
+            const dadosNovos = JSON.stringify(dadosAtualizados.sort((a, b) => a.id - b.id));
+            
+            if (participantesAtuais !== dadosNovos) {
+                console.log('🔄 Sincronizando dados... Diferenças detectadas');
+                console.log('📊 Dados atuais:', participantes.length, 'participantes');
+                console.log('📊 Dados do banco:', dadosAtualizados.length, 'participantes');
+                
                 participantes = dadosAtualizados;
                 atualizarListaParticipantes();
                 atualizarIndicadorPresenca();
                 salvarDados();
+                
+                console.log('✅ Sincronização concluída');
             }
         } catch (error) {
-            console.error('Erro ao sincronizar dados:', error);
+            console.error('❌ Erro ao sincronizar dados:', error);
         }
     }
 }
