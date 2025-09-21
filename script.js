@@ -52,6 +52,39 @@ document.addEventListener('DOMContentLoaded', function() {
             // Configurar upload de imagem
             configurarUploadImagem();
             
+            // Carregar imagem do cabeçalho se existir
+            carregarImagemCapa();
+            
+            // Configurar listeners para sincronização em tempo real
+            if (window.realtimeSync) {
+                // Escutar atualizações do Firebase
+                window.addEventListener('firebaseDataUpdated', function(event) {
+                    console.log('🔄 Dados atualizados via Firebase:', event.detail);
+                    
+                    // Recarregar dados da aplicação
+                    if (event.detail.data && event.detail.data.participantes) {
+                        participantes = event.detail.data.participantes;
+                        atualizarListaParticipantes();
+                        atualizarIndicadorPresenca();
+                        console.log('✅ Interface atualizada com dados do Firebase');
+                    }
+                });
+                
+                // Escutar mudanças no localStorage (outras abas)
+                window.addEventListener('storage', function(e) {
+                    if (e.key === 'sistemaPresenca' && e.newValue) {
+                        console.log('🔄 Dados atualizados em outra aba');
+                        const dados = JSON.parse(e.newValue);
+                        if (dados.participantes) {
+                            participantes = dados.participantes;
+                            atualizarListaParticipantes();
+                            atualizarIndicadorPresenca();
+                            console.log('✅ Interface sincronizada com outra aba');
+                        }
+                    }
+                });
+            }
+            
             console.log('✅ Aplicação inicializada com sucesso!');
             
         } catch (error) {
@@ -66,13 +99,22 @@ async function carregarDados() {
         if (window.databaseService && !window.databaseService.isLocalStorage) {
             console.log('📊 Carregando dados do SQLite...');
             
-            // Carregar participantes
-            participantes = await window.databaseService.getAllParticipants();
+            // Carregar participantes (método correto é getParticipants, não getAllParticipants)
+            participantes = await window.databaseService.getParticipants();
             console.log('Participantes carregados do SQLite:', participantes.length);
             
-            // Carregar pesquisas
-            pesquisas = await window.databaseService.getAllSurveys();
-            console.log('Pesquisas carregadas do SQLite:', pesquisas.length);
+            // Carregar pesquisas (se houver método disponível)
+            if (typeof window.databaseService.getAllSurveys === 'function') {
+                pesquisas = await window.databaseService.getAllSurveys();
+                console.log('Pesquisas carregadas do SQLite:', pesquisas.length);
+            } else {
+                // Carregar pesquisas do localStorage como fallback
+                const dadosLocal = localStorage.getItem('sistemaPresenca');
+                if (dadosLocal) {
+                    const dados = JSON.parse(dadosLocal);
+                    pesquisas = dados.pesquisas || [];
+                }
+            }
             
             // Atualizar interface
             atualizarListaParticipantes();
@@ -150,9 +192,9 @@ async function adicionarParticipante() {
     }
     
     try {
-        if (databaseService) {
+        if (window.databaseService && !window.databaseService.isLocalStorage) {
             // Usar SQLite
-            const novoParticipante = await databaseService.addParticipant(nome, depto);
+            const novoParticipante = await window.databaseService.addParticipant(nome, depto);
             participantes.push(novoParticipante);
         } else {
             // Fallback para localStorage
@@ -272,6 +314,12 @@ function atualizarListaParticipantes() {
     const lista = document.getElementById('lista-participantes');
     const totalElement = document.getElementById('total-participantes');
     const presentesElement = document.getElementById('presentes');
+    
+    // Verificar se os elementos existem antes de usar
+    if (!lista || !totalElement || !presentesElement) {
+        console.warn('⚠️ Elementos DOM não encontrados para atualizar lista de participantes');
+        return;
+    }
     
     const presentes = participantes.filter(p => p.presente).length;
     
@@ -512,6 +560,12 @@ function atualizarResultadosPesquisa() {
     const mediaQualidade = document.getElementById('media-qualidade');
     const mediaInstrutor = document.getElementById('media-instrutor');
     
+    // Verificar se os elementos existem antes de usar
+    if (!totalRespostas || !mediaNPS || !mediaQualidade || !mediaInstrutor) {
+        console.warn('⚠️ Elementos DOM não encontrados para atualizar resultados de pesquisa');
+        return;
+    }
+    
     if (pesquisas.length === 0) {
         totalRespostas.textContent = '0';
         mediaNPS.textContent = '0.0';
@@ -716,8 +770,18 @@ function salvarDados() {
             timestamp: new Date().toISOString()
         };
         
+        // Salvar no localStorage (backup local)
         localStorage.setItem('sistemaPresenca', JSON.stringify(dados));
         console.log('Dados salvos no localStorage');
+        
+        // Sincronizar com Firebase se disponível
+        if (window.realtimeSync && window.realtimeSync.isConnected) {
+            console.log('🔄 Enviando dados para sincronização Firebase...');
+            window.realtimeSync.sendUpdate('data_update', dados);
+        } else {
+            console.log('⚠️ Sistema de sincronização não disponível - usando apenas localStorage');
+        }
+        
     } catch (error) {
         console.error('Erro ao salvar dados:', error);
     }
@@ -727,9 +791,18 @@ function atualizarIndicadorPresenca() {
     const presentes = participantes.filter(p => p.presente).length;
     const ausentes = participantes.length - presentes;
     
+    // Verificar se os elementos existem antes de usar
+    const totalElement = document.getElementById('total-participantes');
+    const presentesElement = document.getElementById('presentes');
+    
+    if (!totalElement || !presentesElement) {
+        console.warn('⚠️ Elementos DOM não encontrados para atualizar indicador de presença');
+        return;
+    }
+    
     // Atualizar números
-    document.getElementById('total-participantes').textContent = `Total: ${participantes.length}`;
-    document.getElementById('presentes').textContent = `Presentes: ${presentes}`;
+    totalElement.textContent = `Total: ${participantes.length}`;
+    presentesElement.textContent = `Presentes: ${presentes}`;
     
     // Atualizar gráfico de presença
     atualizarGraficoPresenca(presentes, ausentes);
@@ -804,6 +877,12 @@ function filtrarParticipantes() {
     const visibleItems = document.querySelectorAll('.participant-item[style="display: flex;"], .participant-item:not([style*="display: none"])');
     const resultadoFiltro = document.getElementById('resultado-filtro');
     
+    // Verificar se o elemento existe antes de usar
+    if (!resultadoFiltro) {
+        console.warn('⚠️ Elemento resultado-filtro não encontrado');
+        return;
+    }
+    
     if (filtro.trim() === '') {
         resultadoFiltro.textContent = '';
     } else {
@@ -815,7 +894,16 @@ function filtrarParticipantes() {
 }
 
 function limparPesquisa() {
-    document.getElementById('filtro-participantes').value = '';
+    const filtroElement = document.getElementById('filtro-participantes');
+    const resultadoElement = document.getElementById('resultado-filtro');
+    
+    // Verificar se os elementos existem antes de usar
+    if (!filtroElement || !resultadoElement) {
+        console.warn('⚠️ Elementos de filtro não encontrados');
+        return;
+    }
+    
+    filtroElement.value = '';
     
     // Mostrar todos os participantes
     const participantesItems = document.querySelectorAll('.participant-item');
@@ -824,7 +912,7 @@ function limparPesquisa() {
     });
     
     // Limpar resultado do filtro
-    document.getElementById('resultado-filtro').textContent = '';
+    resultadoElement.textContent = '';
 }
 
 // Função para processar upload de Excel
