@@ -184,11 +184,14 @@ class RealtimeSync {
             
             // Inicializar Firebase com configuração real
             if (!firebase.apps.length) {
-                firebase.initializeApp(window.firebaseConfig);
+                // Usar initializeApp com apenas a configuração, sem opções extras
+                const app = firebase.initializeApp(window.firebaseConfig);
                 console.log('🔥 Firebase inicializado com config:', window.firebaseConfig);
+                this.database = firebase.database(app);
+            } else {
+                // Se já existe uma instância, usar a existente
+                this.database = firebase.database();
             }
-            
-            this.database = firebase.database();
             
             console.log('🔐 Realizando autenticação anônima...');
             
@@ -221,25 +224,44 @@ class RealtimeSync {
     
     async loadFirebaseSDK() {
         return new Promise((resolve, reject) => {
-            // Firebase App
+            console.log('📦 Carregando Firebase SDK...');
+            
+            // Firebase App (versão compat para evitar problemas de inicialização)
             const appScript = document.createElement('script');
             appScript.src = 'https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js';
             appScript.onload = () => {
+                console.log('✅ Firebase App carregado');
+                
                 // Firebase Database
                 const dbScript = document.createElement('script');
                 dbScript.src = 'https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js';
                 dbScript.onload = () => {
+                    console.log('✅ Firebase Database carregado');
+                    
                     // Firebase Auth
                     const authScript = document.createElement('script');
                     authScript.src = 'https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js';
-                    authScript.onload = resolve;
-                    authScript.onerror = reject;
+                    authScript.onload = () => {
+                        console.log('✅ Firebase Auth carregado');
+                        console.log('🎉 Todos os módulos Firebase carregados com sucesso');
+                        resolve();
+                    };
+                    authScript.onerror = (error) => {
+                        console.error('❌ Erro ao carregar Firebase Auth:', error);
+                        reject(error);
+                    };
                     document.head.appendChild(authScript);
                 };
-                dbScript.onerror = reject;
+                dbScript.onerror = (error) => {
+                    console.error('❌ Erro ao carregar Firebase Database:', error);
+                    reject(error);
+                };
                 document.head.appendChild(dbScript);
             };
-            appScript.onerror = reject;
+            appScript.onerror = (error) => {
+                console.error('❌ Erro ao carregar Firebase App:', error);
+                reject(error);
+            };
             document.head.appendChild(appScript);
         });
     }

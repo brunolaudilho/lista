@@ -2,17 +2,29 @@
 // IMPORTANTE: Substitua pelas suas próprias credenciais do Firebase
 
 // Configuração de exemplo - VOCÊ DEVE SUBSTITUIR PELAS SUAS CREDENCIAIS
-// Your web app's Firebase configuration
-// For Firebase JS SDK v7.20.0 and later, measurementId is optional
 const firebaseConfig = {
-  apiKey: "AIzaSyA4rEocvcYk7N8ECds4XmO5gxLG4LULY44",
-  authDomain: "lista-convidados-app.firebaseapp.com",
-  databaseURL: "https://lista-convidados-app-default-rtdb.firebaseio.com",
-  projectId: "lista-convidados-app",
-  storageBucket: "lista-convidados-app.firebasestorage.app",
-  messagingSenderId: "127386529971",
-  appId: "1:127386529971:web:52cc837a6adeb3139d40c6",
-  measurementId: "G-NJ5JPGEMPC"
+  // ⚠️ ATENÇÃO: Esta é uma configuração de exemplo
+  // Você precisa criar seu próprio projeto no Firebase Console
+  // e substituir estas credenciais pelas suas
+  apiKey: "sua-api-key-aqui",
+  authDomain: "seu-projeto.firebaseapp.com",
+  databaseURL: "https://seu-projeto-default-rtdb.firebaseio.com",
+  projectId: "seu-projeto",
+  storageBucket: "seu-projeto.appspot.com",
+  messagingSenderId: "123456789",
+  appId: "1:123456789:web:abcdef123456789",
+  measurementId: "G-XXXXXXXXXX"
+};
+
+// Configuração temporária para desenvolvimento (simulação)
+const mockConfig = {
+    apiKey: "mock-api-key-for-development",
+    authDomain: "mock-project.firebaseapp.com",
+    databaseURL: "https://mock-project-default-rtdb.firebaseio.com/",
+    projectId: "mock-project",
+    storageBucket: "mock-project.appspot.com",
+    messagingSenderId: "123456789",
+    appId: "mock-app-id"
 };
 
 // Detectar ambiente
