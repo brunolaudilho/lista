@@ -55,35 +55,19 @@ document.addEventListener('DOMContentLoaded', function() {
             // Carregar imagem do cabeçalho se existir
             carregarImagemCapa();
             
-            // Configurar listeners para sincronização em tempo real
-            if (window.realtimeSync) {
-                // Escutar atualizações do Firebase
-                window.addEventListener('firebaseDataUpdated', function(event) {
-                    console.log('🔄 Dados atualizados via Firebase:', event.detail);
-                    
-                    // Recarregar dados da aplicação
-                    if (event.detail.data && event.detail.data.participantes) {
-                        participantes = event.detail.data.participantes;
+            // Escutar mudanças no localStorage (outras abas)
+            window.addEventListener('storage', function(e) {
+                if (e.key === 'sistemaPresenca' && e.newValue) {
+                    console.log('🔄 Dados atualizados em outra aba');
+                    const dados = JSON.parse(e.newValue);
+                    if (dados.participantes) {
+                        participantes = dados.participantes;
                         atualizarListaParticipantes();
                         atualizarIndicadorPresenca();
-                        console.log('✅ Interface atualizada com dados do Firebase');
+                        console.log('✅ Interface sincronizada com outra aba');
                     }
-                });
-                
-                // Escutar mudanças no localStorage (outras abas)
-                window.addEventListener('storage', function(e) {
-                    if (e.key === 'sistemaPresenca' && e.newValue) {
-                        console.log('🔄 Dados atualizados em outra aba');
-                        const dados = JSON.parse(e.newValue);
-                        if (dados.participantes) {
-                            participantes = dados.participantes;
-                            atualizarListaParticipantes();
-                            atualizarIndicadorPresenca();
-                            console.log('✅ Interface sincronizada com outra aba');
-                        }
-                    }
-                });
-            }
+                }
+            });
             
             console.log('✅ Aplicação inicializada com sucesso!');
             
@@ -228,26 +212,13 @@ async function togglePresenca(id) {
         const novoStatus = !participante.presente;
         
         try {
-            if (isSupabaseReady) {
-                // Atualizar no Supabase
-                const participanteAtualizado = await window.supabaseService.updateParticipantPresence(id, novoStatus);
-                
-                // Atualizar dados locais
-                participante.presente = participanteAtualizado.present;
-                participante.horarioCheckIn = participanteAtualizado.arrival_time ? 
-                    new Date(participanteAtualizado.arrival_time).toLocaleTimeString() : null;
-            } else {
-                // Fallback para localStorage
-                participante.presente = novoStatus;
-                participante.horarioCheckIn = novoStatus ? new Date().toLocaleTimeString() : null;
-            }
+            // Atualizar dados locais
+            participante.presente = novoStatus;
+            participante.horarioCheckIn = novoStatus ? new Date().toLocaleTimeString() : null;
             
             atualizarListaParticipantes();
             atualizarIndicadorPresenca();
-            
-            if (!isSupabaseReady) {
-                salvarDados();
-            }
+            salvarDados();
             
         } catch (error) {
             console.error('Erro ao atualizar presença:', error);
@@ -260,17 +231,6 @@ async function removerParticipante(id) {
     if (confirm('Tem certeza que deseja remover este participante?')) {
         try {
             console.log(`🔄 Iniciando remoção do participante ${id}...`);
-            
-            if (isSupabaseReady) {
-                // Remover do Supabase
-                console.log(`📡 Removendo participante ${id} do Supabase...`);
-                const removido = await window.supabaseService.removeParticipant(id);
-                
-                if (!removido) {
-                    console.warn(`⚠️ Participante ${id} não foi encontrado no Supabase`);
-                    // Mesmo assim, remover da lista local se existir
-                }
-            }
             
             // Verificar se existe na lista local antes de remover
             const participanteLocal = participantes.find(p => p.id === id);
@@ -297,9 +257,7 @@ async function removerParticipante(id) {
             atualizarListaParticipantes();
             atualizarIndicadorPresenca();
             
-            if (!isSupabaseReady) {
-                salvarDados();
-            }
+            salvarDados();
             
             console.log(`✅ Processo de remoção do participante ${id} concluído`);
             
@@ -773,14 +731,6 @@ function salvarDados() {
         // Salvar no localStorage (backup local)
         localStorage.setItem('sistemaPresenca', JSON.stringify(dados));
         console.log('Dados salvos no localStorage');
-        
-        // Sincronizar com Firebase se disponível
-        if (window.realtimeSync && window.realtimeSync.isConnected) {
-            console.log('🔄 Enviando dados para sincronização Firebase...');
-            window.realtimeSync.sendUpdate('data_update', dados);
-        } else {
-            console.log('⚠️ Sistema de sincronização não disponível - usando apenas localStorage');
-        }
         
     } catch (error) {
         console.error('Erro ao salvar dados:', error);
