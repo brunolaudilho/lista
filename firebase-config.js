@@ -28,11 +28,10 @@ const localConfig = {
 // Detectar se está em produção (Netlify) ou desenvolvimento
 const isProduction = window.location.hostname !== 'localhost' && 
                     window.location.hostname !== '127.0.0.1' && 
-                    !window.location.hostname.includes('192.168') &&
-                    !window.location.hostname.includes('netlify.app') === false;
+                    !window.location.hostname.includes('192.168');
 
-// Usar configuração apropriada
-const config = isProduction ? firebaseConfig : localConfig;
+// Usar configuração apropriada - SEMPRE usar firebaseConfig para testes
+const config = firebaseConfig; // Forçar uso do Firebase real para testes
 
 // Verificar se está no Netlify especificamente
 const isNetlify = window.location.hostname.includes('netlify.app') || 

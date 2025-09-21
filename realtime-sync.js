@@ -172,13 +172,20 @@ class RealtimeSync {
         
         // Inicializar Firebase
         if (!firebase.apps.length) {
-            firebase.initializeApp(this.config.firebase);
+            firebase.initializeApp(window.firebaseConfig);
+            console.log('🔥 Firebase inicializado com config:', window.firebaseConfig);
         }
         
         this.database = firebase.database();
         
         // Autenticação anônima
-        await firebase.auth().signInAnonymously();
+        try {
+            await firebase.auth().signInAnonymously();
+            console.log('✅ Autenticação anônima realizada com sucesso');
+        } catch (error) {
+            console.error('❌ Erro na autenticação anônima:', error);
+            throw error;
+        }
         
         // Configurar listeners
         this.setupFirebaseListeners();
@@ -217,8 +224,15 @@ class RealtimeSync {
     }
     
     setupFirebaseListeners() {
+        console.log('🔧 Configurando listeners do Firebase...');
+        
         const dataRef = this.database.ref('lista_convidados/data');
         const devicesRef = this.database.ref('lista_convidados/devices');
+        
+        console.log('📡 Referências criadas:', {
+            dataRef: dataRef.toString(),
+            devicesRef: devicesRef.toString()
+        });
         
         // Registrar este dispositivo como ativo
         const deviceInfo = {
@@ -230,7 +244,15 @@ class RealtimeSync {
         };
         
         const deviceRef = devicesRef.child(this.deviceId);
-        deviceRef.set(deviceInfo);
+        console.log('📱 Registrando dispositivo:', this.deviceId);
+        
+        deviceRef.set(deviceInfo)
+            .then(() => {
+                console.log('✅ Dispositivo registrado com sucesso');
+            })
+            .catch((error) => {
+                console.error('❌ Erro ao registrar dispositivo:', error);
+            });
         
         // Manter presença online
         deviceRef.onDisconnect().update({ online: false });
@@ -243,23 +265,36 @@ class RealtimeSync {
         }, 30000); // A cada 30 segundos
         
         // Escutar mudanças nos dados
+        console.log('👂 Configurando listener para dados...');
         dataRef.on('value', (snapshot) => {
+            console.log('📊 Dados recebidos do Firebase:', snapshot.val());
             const data = snapshot.val();
             if (data && data.lastUpdatedBy !== this.deviceId) {
-                console.log('🔄 Dados atualizados por outro dispositivo');
+                console.log('🔄 Dados atualizados por outro dispositivo:', data.lastUpdatedBy);
                 this.handleFirebaseUpdate(data);
+            } else if (data) {
+                console.log('📝 Dados são do próprio dispositivo, ignorando');
+            } else {
+                console.log('📭 Nenhum dado encontrado no Firebase');
             }
+        }, (error) => {
+            console.error('❌ Erro no listener de dados:', error);
         });
         
         // Escutar dispositivos conectados
+        console.log('👂 Configurando listener para dispositivos...');
         devicesRef.on('value', (snapshot) => {
             const devices = snapshot.val() || {};
+            console.log('📱 Dispositivos conectados:', devices);
+            
             const activeDevices = Object.values(devices).filter(device => 
                 device.online && (Date.now() - device.lastSeen < 60000) // Ativo nos últimos 60s
             );
             
             this.updateDeviceCounter(activeDevices.length);
             console.log(`📱 ${activeDevices.length} dispositivo(s) conectado(s)`);
+        }, (error) => {
+            console.error('❌ Erro no listener de dispositivos:', error);
         });
         
         // Escutar erros de conexão
@@ -270,25 +305,67 @@ class RealtimeSync {
             // Fallback para localStorage
             this.initLocalStoragePolling();
         });
+        
+        console.log('✅ Listeners do Firebase configurados');
     }
     
     handleFirebaseUpdate(data) {
-        if (data.participantes) {
-            localStorage.setItem('participantes', JSON.stringify(data.participantes));
-        }
-        if (data.presencas) {
-            localStorage.setItem('presencas', JSON.stringify(data.presencas));
-        }
-        if (data.grupos) {
-            localStorage.setItem('grupos', JSON.stringify(data.grupos));
+        console.log('🔄 Processando atualização do Firebase:', data);
+        
+        if (!data) {
+            console.log('⚠️ Dados vazios recebidos do Firebase');
+            return;
         }
         
-        this.showSyncNotification('Dados sincronizados de outro dispositivo');
-        this.notifyListeners('dataUpdated', data);
+        // Verificar se os dados são diferentes dos locais
+        const currentParticipantes = JSON.parse(localStorage.getItem('participantes') || '[]');
+        const currentPresencas = JSON.parse(localStorage.getItem('presencas') || '{}');
+        const currentGrupos = JSON.parse(localStorage.getItem('grupos') || '[]');
         
-        // Atualizar interface se necessário
-        if (typeof window.atualizarInterface === 'function') {
-            window.atualizarInterface();
+        let hasChanges = false;
+        
+        // Comparar participantes
+        if (JSON.stringify(currentParticipantes) !== JSON.stringify(data.participantes || [])) {
+            console.log('👥 Atualizando participantes:', data.participantes);
+            localStorage.setItem('participantes', JSON.stringify(data.participantes || []));
+            hasChanges = true;
+        }
+        
+        // Comparar presenças
+        if (JSON.stringify(currentPresencas) !== JSON.stringify(data.presencas || {})) {
+            console.log('✅ Atualizando presenças:', data.presencas);
+            localStorage.setItem('presencas', JSON.stringify(data.presencas || {}));
+            hasChanges = true;
+        }
+        
+        // Comparar grupos
+        if (JSON.stringify(currentGrupos) !== JSON.stringify(data.grupos || [])) {
+            console.log('👨‍👩‍👧‍👦 Atualizando grupos:', data.grupos);
+            localStorage.setItem('grupos', JSON.stringify(data.grupos || []));
+            hasChanges = true;
+        }
+        
+        if (hasChanges) {
+            console.log('🔄 Dados atualizados localmente, notificando listeners');
+            this.showSyncNotification('Dados sincronizados de outro dispositivo');
+            this.notifyListeners('dataUpdated', data);
+            
+            // Atualizar interface se necessário
+            if (typeof window.atualizarInterface === 'function') {
+                console.log('🖥️ Atualizando interface');
+                window.atualizarInterface();
+            }
+            
+            // Disparar evento personalizado
+            window.dispatchEvent(new CustomEvent('firebaseDataUpdated', { 
+                detail: { 
+                    data: data,
+                    timestamp: Date.now(),
+                    source: 'firebase'
+                } 
+            }));
+        } else {
+            console.log('📝 Nenhuma mudança detectada nos dados');
         }
     }
     
@@ -403,7 +480,7 @@ class RealtimeSync {
     
     // Método para enviar atualizações
     sendUpdate(type, data = {}) {
-        if (!this.isInitialized) return;
+        console.log('📤 Enviando atualização:', type, data);
         
         if (this.syncMethod === 'firebase' && this.database) {
             // Enviar para Firebase
@@ -419,10 +496,13 @@ class RealtimeSync {
                 ...data
             };
             
+            console.log('🔥 Enviando dados para Firebase:', updateData);
+            
             this.database.ref('lista_convidados/data').set(updateData)
                 .then(() => {
-                    console.log('✅ Dados enviados para Firebase');
+                    console.log('✅ Dados enviados para Firebase com sucesso');
                     this.showSyncIndicator();
+                    this.notifyListeners('updateSent', updateData);
                 })
                 .catch((error) => {
                     console.error('❌ Erro ao enviar dados para Firebase:', error);
@@ -430,6 +510,7 @@ class RealtimeSync {
                     this.sendLocalStorageUpdate(type, data);
                 });
         } else {
+            console.log('📱 Firebase não disponível, usando localStorage');
             // Fallback para localStorage
             this.sendLocalStorageUpdate(type, data);
         }
