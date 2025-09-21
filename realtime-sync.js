@@ -187,7 +187,7 @@ class RealtimeSync {
             
             // Inicializar Firebase com configuração real
             if (!firebase.apps.length) {
-                // Usar initializeApp com apenas a configuração, sem opções extras
+                // Para desenvolvimento local, usar apenas a configuração básica
                 const app = firebase.initializeApp(window.firebaseConfig);
                 console.log('🔥 Firebase inicializado com config:', window.firebaseConfig);
                 this.database = firebase.database(app);
@@ -231,19 +231,19 @@ class RealtimeSync {
             
             // Firebase App (versão compat para evitar problemas de inicialização)
             const appScript = document.createElement('script');
-            appScript.src = 'https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js';
+            appScript.src = 'https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js';
             appScript.onload = () => {
                 console.log('✅ Firebase App carregado');
                 
                 // Firebase Database
                 const dbScript = document.createElement('script');
-                dbScript.src = 'https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js';
+                dbScript.src = 'https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js';
                 dbScript.onload = () => {
                     console.log('✅ Firebase Database carregado');
                     
                     // Firebase Auth
                     const authScript = document.createElement('script');
-                    authScript.src = 'https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js';
+                    authScript.src = 'https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js';
                     authScript.onload = () => {
                         console.log('✅ Firebase Auth carregado');
                         console.log('🎉 Todos os módulos Firebase carregados com sucesso');
