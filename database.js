@@ -23,8 +23,6 @@ class DatabaseService {
             if (savedData) {
                 const data = new Uint8Array(JSON.parse(savedData));
                 this.db = new SQL.Database(data);
-                // Garantir que todas as tabelas existam, mesmo com dados salvos
-                this.createTables();
             } else {
                 this.db = new SQL.Database();
                 this.createTables();
@@ -58,19 +56,6 @@ class DatabaseService {
                 )
             `;
 
-            // Tabela de pesquisas de satisfação
-            const createSurveysTable = `
-                CREATE TABLE IF NOT EXISTS surveys (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    nps INTEGER NOT NULL,
-                    qualidade TEXT NOT NULL,
-                    instrutor TEXT NOT NULL,
-                    comentarios TEXT,
-                    timestamp TEXT NOT NULL,
-                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-                )
-            `;
-
             // Tabela de eventos (para futuras funcionalidades)
             const createEventsTable = `
                 CREATE TABLE IF NOT EXISTS events (
@@ -93,7 +78,6 @@ class DatabaseService {
             `;
 
             this.db.run(createParticipantsTable);
-            this.db.run(createSurveysTable);
             this.db.run(createEventsTable);
             this.db.run(createSettingsTable);
 
@@ -303,12 +287,6 @@ class DatabaseService {
             stats.departments = stmt.getAsObject().departments;
             stmt.free();
             
-            // Total de pesquisas de satisfação
-            stmt = this.db.prepare('SELECT COUNT(*) as surveys FROM surveys');
-            stmt.step();
-            stats.surveysCount = stmt.getAsObject().surveys;
-            stmt.free();
-            
             return stats;
         } catch (error) {
             console.error('❌ Erro ao buscar estatísticas:', error);
@@ -324,7 +302,6 @@ class DatabaseService {
             console.log('🧹 Limpando todos os dados...');
             
             this.db.run('DELETE FROM participants');
-            this.db.run('DELETE FROM surveys');
             this.db.run('DELETE FROM events');
             // Manter configurações
             
@@ -385,80 +362,7 @@ class DatabaseService {
         }
     }
 
-    // === ADMINISTRAÇÃO - Executar SQL customizado ===
-
-    // === MÉTODOS DE PESQUISAS DE SATISFAÇÃO ===
-
-    async addSurveyResponse(surveyData) {
-        this.checkInitialized();
-        
-        try {
-            console.log('💾 Salvando resposta da pesquisa:', surveyData);
-            
-            const stmt = this.db.prepare(`
-                INSERT INTO surveys (nps, qualidade, instrutor, comentarios, timestamp)
-                VALUES (?, ?, ?, ?, ?)
-            `);
-            
-            stmt.run([
-                surveyData.nps,
-                surveyData.qualidade,
-                surveyData.instrutor,
-                surveyData.comentarios || '',
-                surveyData.timestamp
-            ]);
-            
-            stmt.free();
-            await this.saveDatabase();
-            
-            console.log('✅ Resposta da pesquisa salva com sucesso!');
-            return true;
-        } catch (error) {
-            console.error('❌ Erro ao salvar resposta da pesquisa:', error);
-            return false;
-        }
-    }
-
-    async getSurveyResponses() {
-        this.checkInitialized();
-        
-        try {
-            console.log('📊 Buscando respostas das pesquisas...');
-            
-            const stmt = this.db.prepare('SELECT * FROM surveys ORDER BY created_at DESC');
-            const surveys = [];
-            
-            while (stmt.step()) {
-                surveys.push(stmt.getAsObject());
-            }
-            
-            stmt.free();
-            
-            console.log(`✅ ${surveys.length} respostas encontradas`);
-            return surveys;
-        } catch (error) {
-            console.error('❌ Erro ao buscar respostas das pesquisas:', error);
-            return [];
-        }
-    }
-
-    async clearSurveyResponses() {
-        this.checkInitialized();
-        
-        try {
-            console.log('🗑️ Limpando todas as respostas das pesquisas...');
-            
-            this.db.run('DELETE FROM surveys');
-            await this.saveDatabase();
-            
-            console.log('✅ Respostas das pesquisas limpas com sucesso!');
-            return true;
-        } catch (error) {
-            console.error('❌ Erro ao limpar respostas das pesquisas:', error);
-            return false;
-        }
-    }
-
+    // ADMINISTRAÇÃO - Executar SQL customizado
     async executeSQL(sql) {
         this.checkInitialized();
         

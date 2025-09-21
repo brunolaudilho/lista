@@ -8,6 +8,7 @@
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
     <!-- Sistema Principal -->
@@ -47,8 +48,8 @@
             <div class="module-header">
                 <h2><i class="fas fa-user-check"></i> Lista de Presença</h2>
                 <div class="stats">
-                    <span>Total: <span id="total-participantes">0</span></span>
-                    <span>Presentes: <span id="total-presentes">0</span></span>
+                    <span id="total-participantes">Total: 0</span>
+                    <span id="presentes">Presentes: 0</span>
                 </div>
             </div>
             
@@ -198,7 +199,7 @@
                     </button>
                 </div>
 
-            <!-- 1ª Seção: Sorteio de Brinde -->
+            <!-- Seção de Sorteio de Brinde -->
             <div class="admin-section">
                 <h3><i class="fas fa-gift"></i> Sorteio de Brinde</h3>
                 <div class="prize-controls">
@@ -212,30 +213,7 @@
                 </div>
             </div>
 
-            <!-- 2ª Seção: Imagem de Capa -->
-            <div class="admin-section">
-                <h3><i class="fas fa-image"></i> Imagem de Capa</h3>
-                <div class="upload-section">
-                    <div class="current-cover" id="current-cover">
-                        <img id="cover-preview" src="" alt="Imagem de capa atual" style="display: none;">
-                        <div class="no-cover" id="no-cover">
-                            <i class="fas fa-image"></i>
-                            <p>Nenhuma imagem de capa definida</p>
-                        </div>
-                    </div>
-                    <div class="upload-controls">
-                        <input type="file" id="cover-upload" accept="image/*" style="display: none;">
-                        <button class="upload-btn" onclick="document.getElementById('cover-upload').click()">
-                            <i class="fas fa-upload"></i> Selecionar Imagem
-                        </button>
-                        <button class="remove-btn" id="remove-cover" onclick="removerImagemCapa()" style="display: none;">
-                            <i class="fas fa-trash"></i> Remover Imagem
-                        </button>
-                    </div>
-                </div>
-            </div>
-
-            <!-- 3ª Seção: Indicador de Presença -->
+            <!-- Seção de Indicador de Presença -->
             <div class="admin-section">
                 <h3><i class="fas fa-users-check"></i> Indicador de Presença</h3>
                 <div class="presence-indicator">
@@ -274,7 +252,86 @@
                 </div>
             </div>
 
-            <!-- 4ª Seção: Resultados da Pesquisa de Satisfação -->
+            <!-- Seção de Upload de Imagem de Capa -->
+            <div class="admin-section">
+                <h3><i class="fas fa-image"></i> Imagem de Capa</h3>
+                <div class="upload-section">
+                    <div class="current-cover" id="current-cover">
+                        <img id="cover-preview" src="" alt="Imagem de capa atual" style="display: none;">
+                        <div class="no-cover" id="no-cover">
+                            <i class="fas fa-image"></i>
+                            <p>Nenhuma imagem de capa definida</p>
+                        </div>
+                    </div>
+                    <div class="upload-controls">
+                        <input type="file" id="cover-upload" accept="image/*" style="display: none;">
+                        <button class="upload-btn" onclick="document.getElementById('cover-upload').click()">
+                            <i class="fas fa-upload"></i> Selecionar Imagem
+                        </button>
+                        <button class="remove-btn" id="remove-cover" onclick="removerImagemCapa()" style="display: none;">
+                            <i class="fas fa-trash"></i> Remover Imagem
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Seção de Banco de Dados -->
+            <div class="admin-section">
+                <h3><i class="fas fa-database"></i> Banco de Dados</h3>
+                <div class="database-controls">
+                    <div class="database-stats">
+                        <div class="stat-item">
+                            <span class="stat-label">Participantes:</span>
+                            <span class="stat-value" id="db-participants-count">0</span>
+                        </div>
+                        <div class="stat-item">
+                            <span class="stat-label">Pesquisas:</span>
+                            <span class="stat-value" id="db-surveys-count">0</span>
+                        </div>
+                        <div class="stat-item">
+                            <span class="stat-label">Tamanho do BD:</span>
+                            <span class="stat-value" id="db-size">0 KB</span>
+                        </div>
+                    </div>
+                    
+                    <div class="database-actions">
+                        <button onclick="exportarBancoDados()" class="db-btn export-btn">
+                            <i class="fas fa-download"></i> Exportar Dados
+                        </button>
+                        <button onclick="importarBancoDados()" class="db-btn import-btn">
+                            <i class="fas fa-upload"></i> Importar Dados
+                        </button>
+                        <button onclick="limparBancoDados()" class="db-btn clear-btn">
+                            <i class="fas fa-trash-alt"></i> Limpar Banco
+                        </button>
+                        <button onclick="otimizarBancoDados()" class="db-btn optimize-btn">
+                            <i class="fas fa-cogs"></i> Otimizar
+                        </button>
+                    </div>
+                    
+                    <div class="database-info">
+                        <div class="info-section">
+                            <h4>Informações do Sistema</h4>
+                            <div class="info-grid">
+                                <div class="info-item">
+                                    <span>Tipo de Banco:</span>
+                                    <span id="db-type">SQLite Local</span>
+                                </div>
+                                <div class="info-item">
+                                    <span>Status:</span>
+                                    <span id="db-status" class="status-connected">Conectado</span>
+                                </div>
+                                <div class="info-item">
+                                    <span>Última Atualização:</span>
+                                    <span id="db-last-update">-</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Seção de Resultados da Pesquisa -->
             <div class="admin-section">
                 <div class="module-header">
                     <h3><i class="fas fa-chart-bar"></i> Resultados da Pesquisa de Satisfação</h3>
@@ -320,7 +377,7 @@
                         <div class="chart-section">
                             <h4><i class="fas fa-chart-pie"></i> Avaliação da Qualidade</h4>
                             <div class="chart-wrapper">
-                                <canvas id="qualityChart"></canvas>
+                                <canvas id="qualidadeChart"></canvas>
                             </div>
                         </div>
                         
@@ -331,74 +388,6 @@
                             </div>
                         </div>
                     </div>
-                    
-                    <div class="detailed-results">
-                        <h4><i class="fas fa-list"></i> Respostas Detalhadas</h4>
-                        <div class="responses-list" id="lista-respostas">
-                            <p class="no-responses">Nenhuma resposta ainda</p>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- 5ª Seção: Banco de Dados -->
-            <div class="admin-section">
-                <h3><i class="fas fa-database"></i> Banco de Dados</h3>
-                <div class="database-controls">
-                    <div class="database-stats">
-                        <div class="stat-item">
-                            <span class="stat-label">Participantes:</span>
-                            <span class="stat-value" id="db-participants-count">0</span>
-                        </div>
-                        <div class="stat-item">
-                            <span class="stat-label">Pesquisas:</span>
-                            <span class="stat-value" id="db-surveys-count">0</span>
-                        </div>
-                        <div class="stat-item">
-                            <span class="stat-label">Tamanho do BD:</span>
-                            <span class="stat-value" id="db-size">0 KB</span>
-                        </div>
-                    </div>
-                    
-                    <div class="database-actions">
-                        <button onclick="visualizarDadosBanco()" class="db-btn view-btn">
-                            <i class="fas fa-eye"></i> Visualizar Dados
-                        </button>
-                        <button onclick="exportarBancoDados()" class="db-btn export-btn">
-                            <i class="fas fa-download"></i> Exportar Dados
-                        </button>
-                        <button onclick="importarBancoDados()" class="db-btn import-btn">
-                            <i class="fas fa-upload"></i> Importar Dados
-                        </button>
-                        <button onclick="limparBancoDados()" class="db-btn clear-btn">
-                            <i class="fas fa-trash-alt"></i> Limpar Banco
-                        </button>
-                        <button onclick="otimizarBancoDados()" class="db-btn optimize-btn">
-                            <i class="fas fa-cogs"></i> Otimizar
-                        </button>
-                    </div>
-                    
-                    <div class="database-info">
-                        <div class="info-section">
-                            <h4>Informações do Sistema</h4>
-                            <div class="info-grid">
-                                <div class="info-item">
-                                    <span>Tipo de Banco:</span>
-                                    <span id="db-type">SQLite Local</span>
-                                </div>
-                                <div class="info-item">
-                                    <span>Status:</span>
-                                    <span id="db-status" class="status-connected">Conectado</span>
-                                </div>
-                                <div class="info-item">
-                                    <span>Última Atualização:</span>
-                                    <span id="db-last-update">-</span>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
                 </div>
             </div>
             </div>
