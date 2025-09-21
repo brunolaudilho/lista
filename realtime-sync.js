@@ -165,19 +165,22 @@ class RealtimeSync {
     async initFirebase() {
         try {
             console.log('🔥 Inicializando Firebase...');
-            console.log('📋 Configuração:', window.firebaseConfig);
+            console.log('📋 Configuração:', window.firebaseConfig ? 'Carregada' : 'undefined');
             
-            // Verificar se a configuração é mock
-            if (window.firebaseConfig && window.firebaseConfig.apiKey === 'mock-api-key-for-development') {
-                console.log('⚠️ Configuração mock detectada - Firebase não será inicializado');
-                console.log('📱 Usando apenas localStorage para sincronização');
-                this.syncMethod = 'localStorage';
-                this.isConnected = false;
-                this.updateConnectionIndicator(false);
-                return false;
+            // Verificar se temos configuração válida
+            if (!window.firebaseConfig) {
+                throw new Error('Configuração do Firebase não encontrada');
             }
             
-            // Carregar Firebase SDK
+            // Verificar se é configuração mock - se for, pular Firebase e usar localStorage
+            if (window.firebaseConfig.apiKey === 'mock-api-key-for-development' || 
+                window.firebaseConfig.projectId === 'mock-project') {
+                console.log('⚠️ Detectada configuração mock - usando localStorage como fallback');
+                console.log('💡 Para usar Firebase real, configure suas credenciais no firebase-config.js');
+                throw new Error('Configuração mock detectada - usando fallback para localStorage');
+            }
+            
+            // Carregar Firebase SDK apenas se não for mock
             if (!window.firebase) {
                 await this.loadFirebaseSDK();
             }
@@ -322,6 +325,10 @@ class RealtimeSync {
             }
         }, (error) => {
             console.error('❌ Erro no listener de dados:', error);
+            this.isConnected = false;
+            this.updateConnectionIndicator(false);
+            // Fallback para localStorage
+            this.initLocalStoragePolling();
         });
         
         // Escutar dispositivos conectados
@@ -338,11 +345,6 @@ class RealtimeSync {
             console.log(`📱 ${activeDevices.length} dispositivo(s) conectado(s)`);
         }, (error) => {
             console.error('❌ Erro no listener de dispositivos:', error);
-        });
-        
-        // Escutar erros de conexão
-        dataRef.on('error', (error) => {
-            console.error('❌ Erro na conexão Firebase:', error);
             this.isConnected = false;
             this.updateConnectionIndicator(false);
             // Fallback para localStorage
