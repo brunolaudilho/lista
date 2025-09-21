@@ -1228,4 +1228,127 @@ function aplicarImagemCabecalho(imagemSrc) {
 // Inicializar quando a página carregar
 document.addEventListener('DOMContentLoaded', function() {
     carregarImagemCapa();
+    verificarDadosCompartilhados();
 });
+
+// Função para gerar link de compartilhamento
+function gerarLinkCompartilhamento() {
+    try {
+        const dados = {
+            participantes: participantes,
+            pesquisas: pesquisas,
+            timestamp: new Date().toISOString()
+        };
+        
+        const dadosComprimidos = btoa(JSON.stringify(dados));
+        const urlAtual = window.location.origin + window.location.pathname;
+        const linkCompartilhamento = `${urlAtual}?dados=${dadosComprimidos}`;
+        
+        // Criar modal para exibir o link
+        const modal = document.createElement('div');
+        modal.className = 'modal-overlay';
+        modal.innerHTML = `
+            <div class="modal-content" style="max-width: 600px;">
+                <div class="modal-header">
+                    <h3><i class="fas fa-share-alt"></i> Link de Compartilhamento</h3>
+                    <button onclick="this.closest('.modal-overlay').remove()" class="close-btn">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <p>Use este link para compartilhar os dados com outros dispositivos:</p>
+                    <div style="margin: 15px 0;">
+                        <textarea id="linkCompartilhamento" readonly style="width: 100%; height: 100px; padding: 10px; border: 1px solid #ddd; border-radius: 5px; font-family: monospace; font-size: 12px;">${linkCompartilhamento}</textarea>
+                    </div>
+                    <div style="display: flex; gap: 10px; justify-content: center;">
+                        <button onclick="copiarLink()" class="btn-primary">
+                            <i class="fas fa-copy"></i> Copiar Link
+                        </button>
+                        <button onclick="gerarQRCode('${linkCompartilhamento}')" class="btn-secondary">
+                            <i class="fas fa-qrcode"></i> Gerar QR Code
+                        </button>
+                    </div>
+                    <div id="qrcode-container" style="text-align: center; margin-top: 15px;"></div>
+                </div>
+            </div>
+        `;
+        
+        document.body.appendChild(modal);
+        
+    } catch (error) {
+        console.error('Erro ao gerar link de compartilhamento:', error);
+        alert('Erro ao gerar link de compartilhamento. Os dados podem ser muito grandes.');
+    }
+}
+
+// Função para copiar link
+function copiarLink() {
+    const textarea = document.getElementById('linkCompartilhamento');
+    textarea.select();
+    document.execCommand('copy');
+    
+    // Feedback visual
+    const btn = event.target.closest('button');
+    const textoOriginal = btn.innerHTML;
+    btn.innerHTML = '<i class="fas fa-check"></i> Copiado!';
+    btn.style.background = '#4CAF50';
+    
+    setTimeout(() => {
+        btn.innerHTML = textoOriginal;
+        btn.style.background = '';
+    }, 2000);
+}
+
+// Função para gerar QR Code (versão simples)
+function gerarQRCode(url) {
+    const container = document.getElementById('qrcode-container');
+    container.innerHTML = `
+        <p>QR Code gerado:</p>
+        <img src="https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(url)}" 
+             alt="QR Code" style="border: 1px solid #ddd; padding: 10px; background: white;">
+        <p style="font-size: 12px; color: #666; margin-top: 10px;">
+            Escaneie este QR Code para acessar os dados em outro dispositivo
+        </p>
+    `;
+}
+
+// Função para verificar dados compartilhados na URL
+function verificarDadosCompartilhados() {
+    const urlParams = new URLSearchParams(window.location.search);
+    const dadosCompartilhados = urlParams.get('dados');
+    
+    if (dadosCompartilhados) {
+        try {
+            const dados = JSON.parse(atob(dadosCompartilhados));
+            
+            // Confirmar se o usuário quer carregar os dados
+            if (confirm('Dados compartilhados detectados! Deseja carregar estes dados?\n\n' +
+                       `Participantes: ${dados.participantes?.length || 0}\n` +
+                       `Pesquisas: ${dados.pesquisas?.length || 0}\n` +
+                       `Data: ${dados.timestamp ? new Date(dados.timestamp).toLocaleString() : 'N/A'}`)) {
+                
+                // Carregar dados compartilhados
+                if (dados.participantes) {
+                    participantes = dados.participantes;
+                }
+                if (dados.pesquisas) {
+                    pesquisas = dados.pesquisas;
+                }
+                
+                // Atualizar interface
+                atualizarListaParticipantes();
+                atualizarResultadosPesquisa();
+                atualizarIndicadorPresenca();
+                
+                // Salvar dados localmente
+                salvarDados();
+                
+                // Limpar URL
+                window.history.replaceState({}, document.title, window.location.pathname);
+                
+                alert('Dados carregados com sucesso!');
+            }
+        } catch (error) {
+            console.error('Erro ao carregar dados compartilhados:', error);
+            alert('Erro ao carregar dados compartilhados. Link pode estar corrompido.');
+        }
+    }
+}

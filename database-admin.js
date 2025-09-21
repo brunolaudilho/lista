@@ -3,42 +3,66 @@
 // Exportar dados do banco
 async function exportarBancoDados() {
     try {
+        let dados;
+        
         if (databaseService) {
-            const backup = await databaseService.exportData();
-            const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `backup_sistema_presenca_${new Date().toISOString().split('T')[0]}.json`;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            URL.revokeObjectURL(url);
-            
-            alert('Backup exportado com sucesso!');
-            atualizarEstatisticasBanco();
+            dados = await databaseService.exportData();
         } else {
             // Fallback para localStorage
-            const dados = {
-                participantes: participantes,
-                pesquisas: pesquisas,
-                exportDate: new Date().toISOString()
+            dados = {
+                participantes: participantes || [],
+                pesquisas: pesquisas || [],
+                configuracoes: {
+                    tituloEvento: localStorage.getItem('tituloEvento') || '',
+                    imagemCabecalho: localStorage.getItem('imagemCabecalho') || '',
+                    corTema: localStorage.getItem('corTema') || ''
+                },
+                exportDate: new Date().toISOString(),
+                version: '3.0',
+                deviceInfo: {
+                    userAgent: navigator.userAgent,
+                    timestamp: Date.now()
+                }
             };
-            const blob = new Blob([JSON.stringify(dados, null, 2)], { type: 'application/json' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `backup_sistema_presenca_${new Date().toISOString().split('T')[0]}.json`;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            URL.revokeObjectURL(url);
-            
-            alert('Backup exportado com sucesso!');
         }
+        
+        // Adicionar estatísticas do export
+        dados.estatisticas = {
+            totalParticipantes: dados.participantes?.length || 0,
+            totalPesquisas: dados.pesquisas?.length || 0,
+            participantesPresentes: dados.participantes?.filter(p => p.presente).length || 0
+        };
+        
+        const blob = new Blob([JSON.stringify(dados, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-').split('T');
+        const filename = `backup_lista_convidados_${timestamp[0]}_${timestamp[1].split('.')[0]}.json`;
+        
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+        
+        // Mostrar informações do backup
+        const info = `✅ Backup exportado com sucesso!
+        
+📊 Estatísticas:
+• ${dados.estatisticas.totalParticipantes} participantes
+• ${dados.estatisticas.participantesPresentes} presentes
+• ${dados.estatisticas.totalPesquisas} pesquisas
+• Arquivo: ${filename}
+
+💡 Dica: Use este arquivo para sincronizar dados entre dispositivos!`;
+        
+        alert(info);
+        atualizarEstatisticasBanco();
     } catch (error) {
         console.error('Erro ao exportar dados:', error);
-        alert('Erro ao exportar dados. Tente novamente.');
+        alert('❌ Erro ao exportar dados. Tente novamente.');
     }
 }
 
@@ -56,7 +80,32 @@ async function importarBancoDados() {
             const text = await file.text();
             const dados = JSON.parse(text);
             
-            if (confirm('Isso irá substituir todos os dados atuais. Deseja continuar?')) {
+            // Validar estrutura do arquivo
+            if (!dados.participantes && !dados.pesquisas) {
+                throw new Error('Arquivo de backup inválido: estrutura não reconhecida');
+            }
+            
+            // Mostrar informações do backup antes de importar
+            const stats = dados.estatisticas || {
+                totalParticipantes: dados.participantes?.length || 0,
+                totalPesquisas: dados.pesquisas?.length || 0,
+                participantesPresentes: dados.participantes?.filter(p => p.presente).length || 0
+            };
+            
+            const info = `📋 Informações do Backup:
+            
+📊 Dados encontrados:
+• ${stats.totalParticipantes} participantes
+• ${stats.participantesPresentes} presentes
+• ${stats.totalPesquisas} pesquisas
+• Data: ${dados.exportDate ? new Date(dados.exportDate).toLocaleString('pt-BR') : 'Não informada'}
+• Versão: ${dados.version || 'Anterior'}
+
+⚠️ ATENÇÃO: Isso irá substituir todos os dados atuais!
+
+Deseja continuar com a importação?`;
+            
+            if (confirm(info)) {
                 if (databaseService) {
                     await databaseService.importData(dados);
                     await carregarDados();
@@ -64,18 +113,62 @@ async function importarBancoDados() {
                     // Fallback para localStorage
                     participantes = dados.participantes || [];
                     pesquisas = dados.pesquisas || [];
+                    
+                    // Importar configurações se disponíveis
+                    if (dados.configuracoes) {
+                        if (dados.configuracoes.tituloEvento) {
+                            localStorage.setItem('tituloEvento', dados.configuracoes.tituloEvento);
+                        }
+                        if (dados.configuracoes.imagemCabecalho) {
+                            localStorage.setItem('imagemCabecalho', dados.configuracoes.imagemCabecalho);
+                        }
+                        if (dados.configuracoes.corTema) {
+                            localStorage.setItem('corTema', dados.configuracoes.corTema);
+                        }
+                    }
+                    
                     salvarDados();
                     atualizarListaParticipantes();
                     atualizarResultadosPesquisa();
                     atualizarIndicadorPresenca();
+                    
+                    // Recarregar configurações visuais
+                    if (typeof carregarConfiguracoes === 'function') {
+                        carregarConfiguracoes();
+                    }
                 }
                 
-                alert('Dados importados com sucesso!');
+                const successInfo = `✅ Dados importados com sucesso!
+                
+📊 Resumo da importação:
+• ${stats.totalParticipantes} participantes carregados
+• ${stats.participantesPresentes} marcados como presentes
+• ${stats.totalPesquisas} pesquisas importadas
+${dados.configuracoes ? '• Configurações do evento restauradas' : ''}
+
+🔄 A página será atualizada automaticamente.`;
+                
+                alert(successInfo);
                 atualizarEstatisticasBanco();
+                
+                // Atualizar a página para refletir todas as mudanças
+                setTimeout(() => {
+                    location.reload();
+                }, 1000);
             }
         } catch (error) {
             console.error('Erro ao importar dados:', error);
-            alert('Erro ao importar dados. Verifique se o arquivo está correto.');
+            let errorMsg = '❌ Erro ao importar dados.';
+            
+            if (error.message.includes('JSON')) {
+                errorMsg += '\n\n🔍 Problema: Arquivo corrompido ou formato inválido.';
+            } else if (error.message.includes('estrutura')) {
+                errorMsg += '\n\n🔍 Problema: ' + error.message;
+            } else {
+                errorMsg += '\n\n🔍 Verifique se o arquivo está correto e tente novamente.';
+            }
+            
+            alert(errorMsg);
         }
     };
     

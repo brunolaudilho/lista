@@ -1799,6 +1799,16 @@ body {
     background: #5a32a3;
 }
 
+.share-btn {
+    background: linear-gradient(135deg, #4CAF50, #45a049);
+    color: white;
+}
+
+.share-btn:hover {
+    background: linear-gradient(135deg, #45a049, #3d8b40);
+    transform: translateY(-2px);
+}
+
 .database-info {
     background: var(--card-bg);
     border: 1px solid var(--border-color);

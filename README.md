@@ -29,6 +29,12 @@ Sistema completo para gerenciamento de presença em treinamentos corporativos, c
 - **Sistema de Autenticação**: Acesso seguro para administradores
 - **Armazenamento Híbrido**: Local (localStorage) + Nuvem (Supabase)
 
+### 🔄 Sincronização de Dados (NOVO v3.0)
+- **Compartilhamento via URL**: Gere links com dados codificados para acesso instantâneo
+- **Exportação Avançada**: Backup completo com estatísticas e configurações
+- **Importação Inteligente**: Validação e preview antes de restaurar dados
+- **Sincronização Multi-dispositivo**: Acesse seus dados de qualquer lugar
+
 ### Interface Otimizada
 - Design responsivo para tablets
 - Navegação intuitiva por abas
@@ -100,6 +106,12 @@ Sistema completo para gerenciamento de presença em treinamentos corporativos, c
     - Avaliação do Instrutor
     - Respostas detalhadas dos participantes
   - **5ª Seção - Banco de Dados**: Backup, restore e gerenciamento de dados
+    - **Compartilhar Dados**: Gera link com QR Code para acesso instantâneo
+    - **Exportar Dados**: Backup completo com estatísticas detalhadas
+    - **Importar Dados**: Restauração com validação e preview
+    - **Visualizar Dados**: Interface para explorar o banco
+    - **Limpar Dados**: Limpeza seletiva ou completa
+    - **Otimizar Dados**: Manutenção e performance
 
 ### Recursos Especiais
 - Design responsivo otimizado para tablets
@@ -122,6 +134,11 @@ Sistema completo para gerenciamento de presença em treinamentos corporativos, c
    - Aplicar Pesquisa de Satisfação (NPS + Qualidade + Instrutor)
    - Fazer backup dos dados
 
+4. **Sincronização Multi-dispositivo (NOVO v3.0)**:
+   - **Opção 1 - Compartilhamento Rápido**: Use "Compartilhar Dados" para gerar link com QR Code
+   - **Opção 2 - Backup Completo**: Exporte dados e importe em outro dispositivo
+   - **Acesso Remoto**: Acesse dados de qualquer dispositivo via link compartilhado
+
 ## 💾 Dados e Sincronização
 
 ### Armazenamento Híbrido
@@ -129,10 +146,31 @@ Sistema completo para gerenciamento de presença em treinamentos corporativos, c
 - **localStorage**: Backup local para funcionamento offline
 - **Sincronização Automática**: Dados locais são enviados quando a conexão é restaurada
 
+### 🔄 Novas Funcionalidades de Sincronização (v3.0)
+
+#### Compartilhamento via URL
+- **Link Instantâneo**: Gera URL com dados codificados em Base64
+- **QR Code Automático**: Escaneie para acesso rápido no celular/tablet
+- **Acesso Imediato**: Dados carregam automaticamente ao acessar o link
+- **Segurança**: Dados ficam apenas na URL, sem armazenamento externo
+
+#### Exportação Avançada
+- **Backup Completo**: Inclui participantes, pesquisas e configurações
+- **Estatísticas Detalhadas**: Resumo dos dados exportados
+- **Metadados**: Data, versão e informações do dispositivo
+- **Formato JSON**: Arquivo legível e compatível
+
+#### Importação Inteligente
+- **Validação Prévia**: Verifica integridade antes de importar
+- **Preview Detalhado**: Mostra estatísticas do backup
+- **Configurações Incluídas**: Restaura tema, título e imagens
+- **Atualização Automática**: Recarrega interface após importação
+
 ### Backup e Recuperação
 - Dados persistem no Supabase mesmo com limpeza do cache
 - Backup automático local para casos de falha de conexão
 - Recuperação automática de dados ao reconectar
+- **NOVO**: Múltiplas opções de sincronização entre dispositivos
 
 ## 🔧 Arquivos do Projeto
 
