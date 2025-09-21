@@ -1,10 +1,11 @@
-// Dados globais
+// Variáveis globais
 let participantes = [];
 let pesquisas = [];
 let npsChart = null;
 let qualidadeChart = null;
 let instrutorChart = null;
 let databaseService;
+let syncInterval = null;
 
 // Inicialização
 document.addEventListener('DOMContentLoaded', function() {
@@ -55,6 +56,9 @@ document.addEventListener('DOMContentLoaded', function() {
             // Carregar imagem do cabeçalho se existir
             carregarImagemCapa();
             
+            // Iniciar sincronização automática
+            iniciarSincronizacao();
+            
             // Escutar mudanças no localStorage (outras abas)
             window.addEventListener('storage', function(e) {
                 if (e.key === 'sistemaPresenca' && e.newValue) {
@@ -75,6 +79,11 @@ document.addEventListener('DOMContentLoaded', function() {
             console.error('❌ Erro na inicialização:', error);
         }
     }
+    
+    // Parar sincronização quando a página for fechada
+    window.addEventListener('beforeunload', () => {
+        pararSincronizacao();
+    });
 });
 
 // Função para carregar dados do SQLite
@@ -215,6 +224,11 @@ async function togglePresenca(id) {
             // Atualizar dados locais
             participante.presente = novoStatus;
             participante.horarioCheckIn = novoStatus ? new Date().toLocaleTimeString() : null;
+            
+            // Atualizar no banco de dados se disponível
+            if (window.databaseService && !window.databaseService.isLocalStorage) {
+                await window.databaseService.markPresent(id, novoStatus);
+            }
             
             atualizarListaParticipantes();
             atualizarIndicadorPresenca();
@@ -1266,5 +1280,46 @@ function aplicarImagemCabecalho(imagemSrc) {
         header.style.backgroundSize = 'cover';
         header.style.backgroundPosition = 'center';
         header.style.backgroundRepeat = 'no-repeat';
+    }
+}
+
+// ...
+
+// Função para sincronizar dados entre dispositivos
+function iniciarSincronizacao() {
+    // Sincronizar a cada 5 segundos
+    syncInterval = setInterval(async () => {
+        try {
+            await sincronizarDados();
+        } catch (error) {
+            console.error('Erro na sincronização automática:', error);
+        }
+    }, 5000);
+}
+
+async function sincronizarDados() {
+    if (window.databaseService && !window.databaseService.isLocalStorage) {
+        try {
+            // Buscar dados atualizados do banco
+            const dadosAtualizados = await window.databaseService.getParticipants();
+            
+            // Verificar se há diferenças
+            if (JSON.stringify(participantes) !== JSON.stringify(dadosAtualizados)) {
+                console.log('🔄 Sincronizando dados...');
+                participantes = dadosAtualizados;
+                atualizarListaParticipantes();
+                atualizarIndicadorPresenca();
+                salvarDados();
+            }
+        } catch (error) {
+            console.error('Erro ao sincronizar dados:', error);
+        }
+    }
+}
+
+function pararSincronizacao() {
+    if (syncInterval) {
+        clearInterval(syncInterval);
+        syncInterval = null;
     }
 }

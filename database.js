@@ -136,10 +136,10 @@ class DatabaseService {
                 const row = stmt.getAsObject();
                 participants.push({
                     id: row.id,
-                    name: row.name,
-                    department: row.department,
-                    present: Boolean(row.present),
-                    arrival_time: row.arrival_time,
+                    nome: row.name,
+                    departamento: row.department,
+                    presente: Boolean(row.present),
+                    horarioCheckIn: row.arrival_time,
                     created_at: row.created_at,
                     updated_at: row.updated_at
                 });
@@ -173,10 +173,10 @@ class DatabaseService {
             
             const newParticipant = {
                 id: insertId,
-                name: name,
-                department: department,
-                present: false,
-                arrival_time: null,
+                nome: name,
+                departamento: department,
+                presente: false,
+                horarioCheckIn: null,
                 created_at: new Date().toISOString(),
                 updated_at: new Date().toISOString()
             };
