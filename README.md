@@ -30,6 +30,15 @@ Sistema completo para gerenciamento de presença em treinamentos corporativos, c
 - **Armazenamento Híbrido**: Local (localStorage) + Nuvem (Supabase)
 
 ### 🔄 Sincronização de Dados (NOVO v3.0)
+
+#### Sincronização em Tempo Real (NOVO v3.1)
+- **Sincronização Automática**: Alterações são sincronizadas automaticamente entre dispositivos conectados
+- **Indicadores Visuais**: Status de sincronização em tempo real com animações
+- **Múltiplas Tecnologias**: Suporte a WebSockets, Server-Sent Events e polling como fallback
+- **Sincronização Manual**: Botão para forçar sincronização imediata
+- **Notificações**: Alertas visuais quando dados são atualizados por outros dispositivos
+
+#### Compartilhamento e Exportação
 - **Compartilhamento via URL**: Gere links com dados codificados para acesso instantâneo
 - **Exportação Avançada**: Backup completo com estatísticas e configurações
 - **Importação Inteligente**: Validação e preview antes de restaurar dados
@@ -107,6 +116,7 @@ Sistema completo para gerenciamento de presença em treinamentos corporativos, c
     - Respostas detalhadas dos participantes
   - **5ª Seção - Banco de Dados**: Backup, restore e gerenciamento de dados
     - **Compartilhar Dados**: Gera link com QR Code para acesso instantâneo
+    - **Sincronizar Agora**: Force sincronização manual em tempo real
     - **Exportar Dados**: Backup completo com estatísticas detalhadas
     - **Importar Dados**: Restauração com validação e preview
     - **Visualizar Dados**: Interface para explorar o banco
@@ -146,7 +156,14 @@ Sistema completo para gerenciamento de presença em treinamentos corporativos, c
 - **localStorage**: Backup local para funcionamento offline
 - **Sincronização Automática**: Dados locais são enviados quando a conexão é restaurada
 
-### 🔄 Novas Funcionalidades de Sincronização (v3.0)
+### 🔄#### Novas Funcionalidades de Sincronização (v3.1)
+- **Sincronização em Tempo Real**: Sistema automático que detecta e sincroniza alterações instantaneamente
+- **Indicadores Visuais**: Status de conexão e sincronização com animações em tempo real
+- **Múltiplas Tecnologias**: WebSockets para conexão rápida, Server-Sent Events como alternativa, e polling como fallback
+- **Notificações Inteligentes**: Alertas quando outros dispositivos fazem alterações
+- **Sincronização Manual**: Botão para forçar sincronização imediata quando necessário
+
+#### Funcionalidades de Compartilhamento (v3.0)
 
 #### Compartilhamento via URL
 - **Link Instantâneo**: Gera URL com dados codificados em Base64

@@ -371,8 +371,11 @@
                             <i class="fas fa-upload"></i> Importar Dados
                         </button>
                         <button onclick="gerarLinkCompartilhamento()" class="db-btn share-btn">
-                            <i class="fas fa-share-alt"></i> Compartilhar Dados
-                        </button>
+                        <i class="fas fa-share-alt"></i> Compartilhar Dados
+                    </button>
+                    <button onclick="forceSyncNow()" class="db-btn sync-btn">
+                        <i class="fas fa-sync-alt"></i> Sincronizar Agora
+                    </button>
                         <button onclick="limparBancoDados()" class="db-btn clear-btn">
                             <i class="fas fa-trash-alt"></i> Limpar Banco
                         </button>
@@ -438,6 +441,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/sql-wasm.js"></script>
     <script src="database.js"></script>
     <script src="database-admin.js"></script>
+    <script src="realtime-sync.js"></script>
     <script src="script.js"></script>
 </body>
 </html>

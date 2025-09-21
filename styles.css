@@ -1799,6 +1799,175 @@ body {
     background: #5a32a3;
 }
 
+/* Indicadores de Sincronização em Tempo Real */
+.sync-status {
+    position: fixed;
+    top: 10px;
+    right: 10px;
+    background: rgba(0, 0, 0, 0.8);
+    color: white;
+    padding: 8px 12px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: bold;
+    z-index: 1000;
+    transition: all 0.3s ease;
+}
+
+.sync-status.sync-connected {
+    background: linear-gradient(135deg, #4CAF50, #45a049);
+}
+
+.sync-status.sync-disconnected {
+    background: linear-gradient(135deg, #f44336, #d32f2f);
+}
+
+.sync-indicator {
+    position: fixed;
+    top: 50px;
+    right: 10px;
+    background: linear-gradient(135deg, #2196F3, #1976D2);
+    color: white;
+    padding: 8px 12px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: bold;
+    z-index: 1000;
+    animation: pulse 1s infinite;
+}
+
+@keyframes pulse {
+    0% { opacity: 1; }
+    50% { opacity: 0.7; }
+    100% { opacity: 1; }
+}
+
+/* Notificações de Sincronização */
+.sync-notification {
+    position: fixed;
+    top: 20px;
+    left: 50%;
+    transform: translateX(-50%) translateY(-100px);
+    background: linear-gradient(135deg, #4CAF50, #45a049);
+    color: white;
+    padding: 12px 20px;
+    border-radius: 25px;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+    z-index: 1001;
+    transition: all 0.3s ease;
+    opacity: 0;
+}
+
+.sync-notification.show {
+    transform: translateX(-50%) translateY(0);
+    opacity: 1;
+}
+
+.sync-notification-content {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.sync-notification-content i {
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
+/* Botão de Sincronização Manual */
+.sync-btn {
+    background: linear-gradient(135deg, #2196F3, #1976D2);
+    color: white;
+    border: none;
+    padding: 10px 15px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: bold;
+    transition: all 0.3s ease;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.sync-btn:hover {
+    background: linear-gradient(135deg, #1976D2, #1565C0);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 15px rgba(33, 150, 243, 0.3);
+}
+
+.sync-btn i {
+    transition: transform 0.3s ease;
+}
+
+.sync-btn:hover i {
+    transform: rotate(180deg);
+}
+
+/* Indicador de Dispositivos Conectados */
+.devices-indicator {
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    border-radius: 8px;
+    padding: 10px;
+    margin: 10px 0;
+}
+
+.device-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 5px 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.device-item:last-child {
+    border-bottom: none;
+}
+
+.device-info {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.device-status {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #4CAF50;
+}
+
+.device-status.offline {
+    background: #f44336;
+}
+
+/* Animação de sincronização */
+.syncing {
+    position: relative;
+    overflow: hidden;
+}
+
+.syncing::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+    animation: syncWave 1.5s infinite;
+}
+
+@keyframes syncWave {
+    0% { left: -100%; }
+    100% { left: 100%; }
+}
+
 .share-btn {
     background: linear-gradient(135deg, #4CAF50, #45a049);
     color: white;
