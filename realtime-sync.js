@@ -163,39 +163,60 @@ class RealtimeSync {
     }
     
     async initFirebase() {
-        console.log('🔥 Inicializando Firebase...');
-        
-        // Carregar Firebase SDK
-        if (!window.firebase) {
-            await this.loadFirebaseSDK();
-        }
-        
-        // Inicializar Firebase
-        if (!firebase.apps.length) {
-            firebase.initializeApp(window.firebaseConfig);
-            console.log('🔥 Firebase inicializado com config:', window.firebaseConfig);
-        }
-        
-        this.database = firebase.database();
-        
-        // Autenticação anônima
         try {
+            console.log('🔥 Inicializando Firebase...');
+            console.log('📋 Configuração:', window.firebaseConfig);
+            
+            // Verificar se a configuração é mock
+            if (window.firebaseConfig && window.firebaseConfig.apiKey === 'mock-api-key-for-development') {
+                console.log('⚠️ Configuração mock detectada - Firebase não será inicializado');
+                console.log('📱 Usando apenas localStorage para sincronização');
+                this.syncMethod = 'localStorage';
+                this.isConnected = false;
+                this.updateConnectionIndicator(false);
+                return false;
+            }
+            
+            // Carregar Firebase SDK
+            if (!window.firebase) {
+                await this.loadFirebaseSDK();
+            }
+            
+            // Inicializar Firebase com configuração real
+            if (!firebase.apps.length) {
+                firebase.initializeApp(window.firebaseConfig);
+                console.log('🔥 Firebase inicializado com config:', window.firebaseConfig);
+            }
+            
+            this.database = firebase.database();
+            
+            console.log('🔐 Realizando autenticação anônima...');
+            
+            // Autenticação anônima
             await firebase.auth().signInAnonymously();
             console.log('✅ Autenticação anônima realizada com sucesso');
+            
+            this.isConnected = true;
+            this.syncMethod = 'firebase';
+            this.isInitialized = true;
+            this.updateConnectionIndicator(true);
+            
+            // Configurar listeners
+            this.setupFirebaseListeners();
+            
+            console.log('✅ Firebase inicializado com sucesso');
+            return true;
+            
         } catch (error) {
-            console.error('❌ Erro na autenticação anônima:', error);
-            throw error;
+            console.error('❌ Erro ao inicializar Firebase:', error);
+            console.log('📱 Fallback para localStorage');
+            
+            this.isConnected = false;
+            this.syncMethod = 'localStorage';
+            this.updateConnectionIndicator(false);
+            
+            return false;
         }
-        
-        // Configurar listeners
-        this.setupFirebaseListeners();
-        
-        this.syncMethod = 'firebase';
-        this.isConnected = true;
-        this.isInitialized = true;
-        this.updateConnectionIndicator(true);
-        
-        console.log('✅ Firebase conectado com sucesso');
     }
     
     async loadFirebaseSDK() {

@@ -1,39 +1,41 @@
 // Configuração do Firebase para sincronização em tempo real
-// Para usar no Netlify, você precisará configurar suas próprias credenciais
+// IMPORTANTE: Substitua pelas suas próprias credenciais do Firebase
 
-// Your web app's Firebase configuration
-// For Firebase JS SDK v7.20.0 and later, measurementId is optional
+// Configuração de exemplo - VOCÊ DEVE SUBSTITUIR PELAS SUAS CREDENCIAIS
 const firebaseConfig = {
-  apiKey: "AIzaSyA4rEocvcYk7N8ECds4XmO5gxLG4LULY44",
-  authDomain: "lista-convidados-app.firebaseapp.com",
-  databaseURL: "https://lista-convidados-app-default-rtdb.firebaseio.com",
-  projectId: "lista-convidados-app",
-  storageBucket: "lista-convidados-app.firebasestorage.app",
-  messagingSenderId: "127386529971",
-  appId: "1:127386529971:web:52cc837a6adeb3139d40c6",
-  measurementId: "G-NJ5JPGEMPC"
+  // ⚠️ ATENÇÃO: Esta é uma configuração de exemplo
+  // Você precisa criar seu próprio projeto no Firebase Console
+  // e substituir estas credenciais pelas suas
+  apiKey: "sua-api-key-aqui",
+  authDomain: "seu-projeto.firebaseapp.com",
+  databaseURL: "https://seu-projeto-default-rtdb.firebaseio.com",
+  projectId: "seu-projeto",
+  storageBucket: "seu-projeto.appspot.com",
+  messagingSenderId: "123456789",
+  appId: "1:123456789:web:abcdef123456789",
+  measurementId: "G-XXXXXXXXXX"
 };
 
-// Configuração para desenvolvimento local (opcional)
-const localConfig = {
-    apiKey: "demo-key",
-    authDomain: "demo-project.firebaseapp.com",
-    databaseURL: "https://demo-project-default-rtdb.firebaseio.com/",
-    projectId: "demo-project",
-    storageBucket: "demo-project.appspot.com",
+// Configuração temporária para desenvolvimento (simulação)
+const mockConfig = {
+    apiKey: "mock-api-key-for-development",
+    authDomain: "mock-project.firebaseapp.com",
+    databaseURL: "https://mock-project-default-rtdb.firebaseio.com/",
+    projectId: "mock-project",
+    storageBucket: "mock-project.appspot.com",
     messagingSenderId: "123456789",
-    appId: "demo-app-id"
+    appId: "mock-app-id"
 };
 
-// Detectar se está em produção (Netlify) ou desenvolvimento
+// Detectar ambiente
 const isProduction = window.location.hostname !== 'localhost' && 
                     window.location.hostname !== '127.0.0.1' && 
                     !window.location.hostname.includes('192.168');
 
-// Usar configuração apropriada - SEMPRE usar firebaseConfig para testes
-const config = firebaseConfig; // Forçar uso do Firebase real para testes
+// TEMPORARIAMENTE usando configuração mock para evitar erros
+// Quando você tiver suas credenciais reais, mude para: firebaseConfig
+const config = mockConfig;
 
-// Verificar se está no Netlify especificamente
 const isNetlify = window.location.hostname.includes('netlify.app') || 
                   window.location.hostname.includes('netlify.com');
 
@@ -49,3 +51,4 @@ if (isNetlify) {
 window.firebaseConfig = config;
 
 console.log('🔧 Firebase config carregado para:', isProduction ? 'PRODUÇÃO' : 'DESENVOLVIMENTO');
+console.log('⚠️ ATENÇÃO: Usando configuração mock - configure suas credenciais reais do Firebase!');
