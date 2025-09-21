@@ -185,11 +185,34 @@ class RealtimeSync {
                 await this.loadFirebaseSDK();
             }
             
-            // Inicializar Firebase com configuração real
+            // Detectar ambiente e configurar Firebase adequadamente
+            const isLocalhost = window.location.hostname === 'localhost' || 
+                               window.location.hostname === '127.0.0.1' ||
+                               window.location.hostname.includes('192.168');
+            
+            // Inicializar Firebase com configuração adequada para o ambiente
             if (!firebase.apps.length) {
-                // Para desenvolvimento local, usar apenas a configuração básica
-                const app = firebase.initializeApp(window.firebaseConfig);
-                console.log('🔥 Firebase inicializado com config:', window.firebaseConfig);
+                let app;
+                
+                if (isLocalhost) {
+                    // Para desenvolvimento local, usar configuração específica
+                    console.log('🏠 Ambiente local detectado - configurando Firebase para desenvolvimento');
+                    
+                    // Criar configuração específica para localhost
+                    const localConfig = {
+                        ...window.firebaseConfig,
+                        // Garantir que a URL do database está correta
+                        databaseURL: window.firebaseConfig.databaseURL
+                    };
+                    
+                    app = firebase.initializeApp(localConfig);
+                } else {
+                    // Para produção, usar configuração padrão
+                    console.log('🌐 Ambiente de produção detectado');
+                    app = firebase.initializeApp(window.firebaseConfig);
+                }
+                
+                console.log('🔥 Firebase inicializado com sucesso');
                 this.database = firebase.database(app);
             } else {
                 // Se já existe uma instância, usar a existente
