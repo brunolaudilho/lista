@@ -1,20 +1,10 @@
-// Funções de administração do banco de dados SQLite
+// Funções de administração do banco de dados Backendless
 
 // Exportar dados do banco
 async function exportarBancoDados() {
     try {
         if (databaseService) {
-            const backup = await databaseService.exportData();
-            const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `backup_sistema_presenca_${new Date().toISOString().split('T')[0]}.json`;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            URL.revokeObjectURL(url);
-            
+            await databaseService.exportData();
             alert('Backup exportado com sucesso!');
             atualizarEstatisticasBanco();
         } else {

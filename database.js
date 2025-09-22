@@ -1,119 +1,70 @@
-// Configuração do banco de dados SQLite
+// Configuração do banco de dados Backendless
 class DatabaseService {
     constructor() {
         this.db = null;
         this.isInitialized = false;
         this.isLocalStorage = false;
+        this.listeners = new Map(); // Para armazenar listeners de tempo real
     }
 
     async init() {
         try {
-            // Aguarda o SQL.js carregar
-            if (typeof initSqlJs === 'undefined') {
-                throw new Error('SQL.js não está carregado. Certifique-se de incluir a biblioteca.');
+            // Verifica se o Backendless foi carregado
+            if (typeof window.backendlessDB === 'undefined') {
+                throw new Error('Backendless não está carregado. Certifique-se de incluir backendless-config.js primeiro.');
             }
 
-            const SQL = await initSqlJs({
-                locateFile: file => `https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.8.0/${file}`
-            });
-
-            // Tenta carregar dados existentes do localStorage
-            const savedData = localStorage.getItem('sqlite_database');
+            this.db = window.backendlessDB;
             
-            if (savedData) {
-                const data = new Uint8Array(JSON.parse(savedData));
-                this.db = new SQL.Database(data);
-            } else {
-                this.db = new SQL.Database();
-                this.createTables();
-            }
+            // Inicializar configurações padrão se necessário
+            await this.initializeDefaultSettings();
 
             this.isInitialized = true;
-            console.log('✅ Banco de dados SQLite inicializado com sucesso');
+            console.log('✅ Banco de dados Backendless inicializado com sucesso');
             return true;
         } catch (error) {
-            console.error('❌ Erro ao inicializar banco de dados:', error);
+            console.error('❌ Erro ao inicializar Backendless:', error);
+            console.log('🔄 Voltando para localStorage como fallback...');
             this.isLocalStorage = true;
             return false;
         }
     }
 
-    // Criar tabelas
-    async createTables() {
+    // Inicializar configurações padrão
+    async initializeDefaultSettings() {
         try {
-            console.log('🏗️ Criando tabelas...');
+            // Verificar se já existem configurações
+            const queryBuilder = this.db.DataQueryBuilder();
+            const settings = await this.db.find('Settings', queryBuilder);
             
-            // Tabela de participantes
-            const createParticipantsTable = `
-                CREATE TABLE IF NOT EXISTS participants (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    name TEXT NOT NULL,
-                    department TEXT NOT NULL,
-                    present BOOLEAN DEFAULT FALSE,
-                    arrival_time TEXT,
-                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-                )
-            `;
+            // Se não há configurações, criar as padrão
+            if (settings.length === 0) {
+                const defaultSettings = [
+                    { key: 'admin_password', value: 'admin123' },
+                    { key: 'app_title', value: 'Lista de Convidados' },
+                    { key: 'max_participants', value: '1000' }
+                ];
 
-            // Tabela de eventos (para futuras funcionalidades)
-            const createEventsTable = `
-                CREATE TABLE IF NOT EXISTS events (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    name TEXT NOT NULL,
-                    description TEXT,
-                    date TEXT NOT NULL,
-                    location TEXT,
-                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-                )
-            `;
-
-            // Tabela de configurações
-            const createSettingsTable = `
-                CREATE TABLE IF NOT EXISTS settings (
-                    key TEXT PRIMARY KEY,
-                    value TEXT NOT NULL,
-                    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-                )
-            `;
-
-            this.db.run(createParticipantsTable);
-            this.db.run(createEventsTable);
-            this.db.run(createSettingsTable);
-
-            // Inserir configurações padrão
-            const defaultSettings = [
-                ['admin_password', 'admin123'],
-                ['app_title', 'Lista de Convidados'],
-                ['max_participants', '1000']
-            ];
-
-            const insertSetting = this.db.prepare('INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)');
-            defaultSettings.forEach(([key, value]) => {
-                insertSetting.run([key, value]);
-            });
-            insertSetting.free();
-
-            await this.saveDatabase();
-            console.log('✅ Tabelas criadas com sucesso!');
-            
+                for (const setting of defaultSettings) {
+                    await this.db.save('Settings', {
+                        ...setting,
+                        updated_at: new Date()
+                    });
+                }
+                console.log('✅ Configurações padrão criadas no Backendless');
+            }
         } catch (error) {
-            console.error('❌ Erro ao criar tabelas:', error);
-            throw error;
+            console.error('❌ Erro ao inicializar configurações:', error);
         }
     }
 
-    // Salvar banco de dados no localStorage
+    // Salvar banco de dados (não necessário com Backendless, mas mantido para compatibilidade)
     saveDatabase() {
-        if (this.db && this.isInitialized && !this.isLocalStorage) {
-            try {
-                const data = this.db.export();
-                const buffer = Array.from(data);
-                localStorage.setItem('sqlite_database', JSON.stringify(buffer));
-                console.log('💾 Banco de dados salvo no localStorage');
-            } catch (error) {
-                console.error('❌ Erro ao salvar banco de dados:', error);
-            }
+        // Backendless salva automaticamente, mas podemos usar para localStorage fallback
+        if (this.isLocalStorage) {
+            console.log('💾 Usando localStorage como fallback');
+        } else {
+            console.log('💾 Dados salvos automaticamente no Backendless');
         }
     }
 
@@ -129,24 +80,25 @@ class DatabaseService {
         this.checkInitialized();
         
         try {
-            const stmt = this.db.prepare('SELECT * FROM participants ORDER BY created_at DESC');
-            const participants = [];
-            
-            while (stmt.step()) {
-                const row = stmt.getAsObject();
-                participants.push({
-                    id: row.id,
-                    nome: row.name,
-                    departamento: row.department,
-                    presente: Boolean(row.present),
-                    horarioCheckIn: row.arrival_time,
-                    created_at: row.created_at,
-                    updated_at: row.updated_at
-                });
+            if (this.isLocalStorage) {
+                // Fallback para localStorage
+                const participants = JSON.parse(localStorage.getItem('participants') || '[]');
+                return participants;
             }
             
-            stmt.free();
-            return participants;
+            const queryBuilder = this.db.DataQueryBuilder()
+                .setSortBy(['created_at DESC']);
+            
+            const participants = await this.db.find('Participants', queryBuilder);
+            return participants.map(p => ({
+                id: p.objectId,
+                name: p.name,
+                department: p.department,
+                present: Boolean(p.present),
+                arrival_time: p.arrival_time,
+                created_at: p.created_at,
+                updated_at: p.updated_at
+            }));
         } catch (error) {
             console.error('❌ Erro ao buscar participantes:', error);
             throw error;
@@ -160,29 +112,44 @@ class DatabaseService {
         try {
             console.log(`➕ Adicionando participante: ${name} (${department})`);
             
-            const stmt = this.db.prepare(`
-                INSERT INTO participants (name, department, present, created_at, updated_at) 
-                VALUES (?, ?, FALSE, datetime('now'), datetime('now'))
-            `);
+            if (this.isLocalStorage) {
+                // Fallback para localStorage
+                const participants = JSON.parse(localStorage.getItem('participants') || '[]');
+                const newParticipant = {
+                    id: Date.now().toString(),
+                    name: name,
+                    department: department,
+                    present: false,
+                    arrival_time: null,
+                    created_at: new Date().toISOString(),
+                    updated_at: new Date().toISOString()
+                };
+                participants.push(newParticipant);
+                localStorage.setItem('participants', JSON.stringify(participants));
+                return newParticipant;
+            }
             
-            stmt.run([name, department]);
-            const insertId = this.db.exec("SELECT last_insert_rowid()")[0].values[0][0];
-            stmt.free();
-            
-            await this.saveDatabase();
-            
-            const newParticipant = {
-                id: insertId,
-                nome: name,
-                departamento: department,
-                presente: false,
-                horarioCheckIn: null,
-                created_at: new Date().toISOString(),
-                updated_at: new Date().toISOString()
+            const participantData = {
+                name: name,
+                department: department,
+                present: false,
+                arrival_time: null,
+                created_at: new Date(),
+                updated_at: new Date()
             };
             
-            console.log(`✅ Participante adicionado com ID: ${insertId}`);
-            return newParticipant;
+            const savedParticipant = await this.db.save('Participants', participantData);
+            
+            console.log(`✅ Participante adicionado com ID: ${savedParticipant.objectId}`);
+            return {
+                id: savedParticipant.objectId,
+                name: savedParticipant.name,
+                department: savedParticipant.department,
+                present: savedParticipant.present,
+                arrival_time: savedParticipant.arrival_time,
+                created_at: savedParticipant.created_at,
+                updated_at: savedParticipant.updated_at
+            };
             
         } catch (error) {
             console.error('❌ Erro ao adicionar participante:', error);
@@ -197,31 +164,34 @@ class DatabaseService {
         try {
             console.log(`🗑️ Removendo participante ID: ${id}`);
             
-            // Verificar se existe
-            const checkStmt = this.db.prepare('SELECT * FROM participants WHERE id = ?');
-            checkStmt.bind([id]);
+            if (this.isLocalStorage) {
+                // Fallback para localStorage
+                const participants = JSON.parse(localStorage.getItem('participants') || '[]');
+                const index = participants.findIndex(p => p.id === id);
+                if (index === -1) {
+                    console.log(`⚠️ Participante ID ${id} não encontrado`);
+                    return false;
+                }
+                participants.splice(index, 1);
+                localStorage.setItem('participants', JSON.stringify(participants));
+                console.log(`✅ Participante removido`);
+                return true;
+            }
             
-            if (!checkStmt.step()) {
-                checkStmt.free();
+            // Verificar se existe
+            const participant = await this.db.findById('Participants', id);
+            if (!participant) {
                 console.log(`⚠️ Participante ID ${id} não encontrado`);
                 return false;
             }
             
-            const participant = checkStmt.getAsObject();
-            checkStmt.free();
-            
             console.log(`📋 Participante encontrado: ${participant.name}`);
             
             // Remover
-            const deleteStmt = this.db.prepare('DELETE FROM participants WHERE id = ?');
-            deleteStmt.run([id]);
-            const changes = this.db.getRowsModified();
-            deleteStmt.free();
+            await this.db.remove('Participants', id);
             
-            await this.saveDatabase();
-            
-            console.log(`✅ Participante removido. Linhas afetadas: ${changes}`);
-            return changes > 0;
+            console.log(`✅ Participante removido`);
+            return true;
             
         } catch (error) {
             console.error('❌ Erro ao remover participante:', error);
@@ -236,22 +206,35 @@ class DatabaseService {
         try {
             console.log(`✅ Marcando presença do participante ID ${id}: ${present}`);
             
-            const arrivalTime = present ? new Date().toISOString() : null;
+            if (this.isLocalStorage) {
+                // Fallback para localStorage
+                const participants = JSON.parse(localStorage.getItem('participants') || '[]');
+                const participant = participants.find(p => p.id === id);
+                if (!participant) {
+                    console.log(`⚠️ Participante ID ${id} não encontrado`);
+                    return false;
+                }
+                participant.present = present;
+                participant.arrival_time = present ? new Date().toISOString() : null;
+                participant.updated_at = new Date().toISOString();
+                localStorage.setItem('participants', JSON.stringify(participants));
+                console.log(`✅ Presença atualizada`);
+                return true;
+            }
             
-            const stmt = this.db.prepare(`
-                UPDATE participants 
-                SET present = ?, arrival_time = ?, updated_at = datetime('now')
-                WHERE id = ?
-            `);
+            const arrivalTime = present ? new Date() : null;
             
-            stmt.run([present ? 1 : 0, arrivalTime, id]);
-            const changes = this.db.getRowsModified();
-            stmt.free();
+            const updateData = {
+                objectId: id,
+                present: present,
+                arrival_time: arrivalTime,
+                updated_at: new Date()
+            };
             
-            await this.saveDatabase();
+            await this.db.save('Participants', updateData);
             
-            console.log(`✅ Presença atualizada. Linhas afetadas: ${changes}`);
-            return changes > 0;
+            console.log(`✅ Presença atualizada`);
+            return true;
             
         } catch (error) {
             console.error('❌ Erro ao marcar presença:', error);
@@ -264,28 +247,36 @@ class DatabaseService {
         this.checkInitialized();
         
         try {
+            if (this.isLocalStorage) {
+                // Fallback para localStorage
+                const participants = JSON.parse(localStorage.getItem('participants') || '[]');
+                const stats = {
+                    total: participants.length,
+                    present: participants.filter(p => p.present).length,
+                    absent: participants.filter(p => !p.present).length,
+                    departments: [...new Set(participants.map(p => p.department))].length
+                };
+                return stats;
+            }
+            
             const stats = {};
             
             // Total de participantes
-            let stmt = this.db.prepare('SELECT COUNT(*) as total FROM participants');
-            stmt.step();
-            stats.total = stmt.getAsObject().total;
-            stmt.free();
+            const allParticipants = await this.db.find('Participants');
+            stats.total = allParticipants.length;
             
             // Participantes presentes
-            stmt = this.db.prepare('SELECT COUNT(*) as present FROM participants WHERE present = 1');
-            stmt.step();
-            stats.present = stmt.getAsObject().present;
-            stmt.free();
+            const presentQuery = this.db.DataQueryBuilder()
+                .setWhereClause('present = true');
+            const presentParticipants = await this.db.find('Participants', presentQuery);
+            stats.present = presentParticipants.length;
             
             // Participantes ausentes
             stats.absent = stats.total - stats.present;
             
             // Departamentos únicos
-            stmt = this.db.prepare('SELECT COUNT(DISTINCT department) as departments FROM participants');
-            stmt.step();
-            stats.departments = stmt.getAsObject().departments;
-            stmt.free();
+            const departments = [...new Set(allParticipants.map(p => p.department))];
+            stats.departments = departments.length;
             
             return stats;
         } catch (error) {
@@ -301,11 +292,27 @@ class DatabaseService {
         try {
             console.log('🧹 Limpando todos os dados...');
             
-            this.db.run('DELETE FROM participants');
-            this.db.run('DELETE FROM events');
-            // Manter configurações
+            if (this.isLocalStorage) {
+                // Fallback para localStorage
+                localStorage.removeItem('participants');
+                localStorage.removeItem('events');
+                console.log('✅ Todos os dados foram limpos!');
+                return true;
+            }
             
-            await this.saveDatabase();
+            // Buscar todos os participantes e eventos para deletar
+            const participants = await this.db.find('Participants');
+            const events = await this.db.find('Events');
+            
+            // Deletar participantes
+            for (const participant of participants) {
+                await this.db.remove('Participants', participant.objectId);
+            }
+            
+            // Deletar eventos
+            for (const event of events) {
+                await this.db.remove('Events', event.objectId);
+            }
             
             console.log('✅ Todos os dados foram limpos!');
             return true;
@@ -315,67 +322,118 @@ class DatabaseService {
         }
     }
 
-    // ADMINISTRAÇÃO - Backup do banco
-    async exportDatabase() {
+    // ADMINISTRAÇÃO - Exportar dados (JSON)
+    async exportData() {
         this.checkInitialized();
         
         try {
-            const data = this.db.export();
-            const blob = new Blob([data], { type: 'application/octet-stream' });
+            console.log('📤 Exportando dados...');
+            
+            let participants, events, settings;
+            
+            if (this.isLocalStorage) {
+                // Fallback para localStorage
+                participants = JSON.parse(localStorage.getItem('participants') || '[]');
+                events = JSON.parse(localStorage.getItem('events') || '[]');
+                settings = JSON.parse(localStorage.getItem('settings') || '{}');
+            } else {
+                // Buscar dados do Backendless
+                participants = await this.db.find('Participants');
+                events = await this.db.find('Events');
+                settings = await this.db.find('Settings');
+            }
+            
+            const exportData = {
+                participants,
+                events,
+                settings,
+                exportDate: new Date().toISOString(),
+                version: '2.0'
+            };
+            
+            const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
             const url = URL.createObjectURL(blob);
             
             const a = document.createElement('a');
             a.href = url;
-            a.download = `lista_convidados_backup_${new Date().toISOString().split('T')[0]}.db`;
+            a.download = `lista_convidados_backup_${new Date().toISOString().split('T')[0]}.json`;
             document.body.appendChild(a);
             a.click();
             document.body.removeChild(a);
             URL.revokeObjectURL(url);
             
-            console.log('✅ Backup do banco de dados exportado!');
+            console.log('✅ Dados exportados com sucesso!');
             return true;
         } catch (error) {
-            console.error('❌ Erro ao exportar banco:', error);
+            console.error('❌ Erro ao exportar dados:', error);
             throw error;
         }
     }
 
-    // ADMINISTRAÇÃO - Importar banco
-    async importDatabase(file) {
-        try {
-            console.log('📥 Importando banco de dados...');
-            
-            const arrayBuffer = await file.arrayBuffer();
-            const uInt8Array = new Uint8Array(arrayBuffer);
-            
-            // Criar nova instância do banco
-            this.db = new SQL.Database(uInt8Array);
-            this.isInitialized = true;
-            
-            await this.saveDatabase();
-            
-            console.log('✅ Banco de dados importado com sucesso!');
-            return true;
-        } catch (error) {
-            console.error('❌ Erro ao importar banco:', error);
-            throw error;
-        }
-    }
-
-    // ADMINISTRAÇÃO - Executar SQL customizado
-    async executeSQL(sql) {
+    // CONFIGURAÇÕES - Obter configuração
+    async getSetting(key) {
         this.checkInitialized();
         
         try {
-            console.log(`🔧 Executando SQL: ${sql}`);
+            if (this.isLocalStorage) {
+                // Fallback para localStorage
+                const settings = JSON.parse(localStorage.getItem('settings') || '{}');
+                return settings[key];
+            }
             
-            const results = this.db.exec(sql);
-            await this.saveDatabase();
+            const queryBuilder = this.db.DataQueryBuilder()
+                .setWhereClause(`key = '${key}'`);
             
-            console.log('✅ SQL executado com sucesso!');
-            return results;
+            const settings = await this.db.find('Settings', queryBuilder);
+            return settings.length > 0 ? settings[0].value : null;
         } catch (error) {
-            console.error('❌ Erro ao executar SQL:', error);
+            console.error('❌ Erro ao buscar configuração:', error);
+            throw error;
+        }
+    }
+
+    // CONFIGURAÇÕES - Definir configuração
+    async setSetting(key, value) {
+        this.checkInitialized();
+        
+        try {
+            if (this.isLocalStorage) {
+                // Fallback para localStorage
+                const settings = JSON.parse(localStorage.getItem('settings') || '{}');
+                settings[key] = value;
+                localStorage.setItem('settings', JSON.stringify(settings));
+                return true;
+            }
+            
+            // Verificar se já existe
+            const queryBuilder = this.db.DataQueryBuilder()
+                .setWhereClause(`key = '${key}'`);
+            
+            const existingSettings = await this.db.find('Settings', queryBuilder);
+            
+            if (existingSettings.length > 0) {
+                // Atualizar
+                const updateData = {
+                    objectId: existingSettings[0].objectId,
+                    key: key,
+                    value: value,
+                    updated_at: new Date()
+                };
+                await this.db.save('Settings', updateData);
+            } else {
+                // Criar novo
+                const settingData = {
+                    key: key,
+                    value: value,
+                    created_at: new Date(),
+                    updated_at: new Date()
+                };
+                await this.db.save('Settings', settingData);
+            }
+            
+            return true;
+        } catch (error) {
+            console.error('❌ Erro ao definir configuração:', error);
             throw error;
         }
     }
