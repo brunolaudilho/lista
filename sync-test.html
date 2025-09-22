@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Teste de Sincronização - Sistema de Presença</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        .status {
+            padding: 10px;
+            border-radius: 4px;
+            margin: 10px 0;
+        }
+        .success { background-color: #d4edda; color: #155724; }
+        .warning { background-color: #fff3cd; color: #856404; }
+        .error { background-color: #f8d7da; color: #721c24; }
+        .info { background-color: #d1ecf1; color: #0c5460; }
+        button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover { background-color: #0056b3; }
+        .danger { background-color: #dc3545; }
+        .danger:hover { background-color: #c82333; }
+        #log {
+            background-color: #f8f9fa;
+            border: 1px solid #dee2e6;
+            padding: 15px;
+            border-radius: 4px;
+            height: 300px;
+            overflow-y: auto;
+            font-family: monospace;
+            font-size: 12px;
+        }
+        .test-section {
+            border-left: 4px solid #007bff;
+            padding-left: 15px;
+            margin: 20px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔄 Teste de Sincronização</h1>
+        <p>Esta página permite testar a sincronização de dados entre dispositivos/abas.</p>
+        
+        <div class="test-section">
+            <h3>📊 Status do Sistema</h3>
+            <div id="system-status"></div>
+        </div>
+        
+        <div class="test-section">
+            <h3>🧪 Testes de Sincronização</h3>
+            <button onclick="testarLocalStorage()">Testar localStorage</button>
+            <button onclick="testarBancoDados()">Testar Banco de Dados</button>
+            <button onclick="testarEventos()">Testar Eventos</button>
+            <button onclick="simularDados()">Simular Dados</button>
+            <button onclick="limparTudo()" class="danger">Limpar Tudo</button>
+        </div>
+        
+        <div class="test-section">
+            <h3>📱 Simulação Multi-Dispositivo</h3>
+            <p>Abra esta página em múltiplas abas ou dispositivos para testar a sincronização.</p>
+            <button onclick="adicionarParticipanteTeste()">Adicionar Participante Teste</button>
+            <button onclick="togglePresencaTeste()">Toggle Presença Aleatória</button>
+            <button onclick="forcarSincronizacao()">Forçar Sincronização</button>
+        </div>
+        
+        <div class="test-section">
+            <h3>📋 Dados Atuais</h3>
+            <div id="dados-atuais"></div>
+        </div>
+        
+        <div class="test-section">
+            <h3>📝 Log de Eventos</h3>
+            <div id="log"></div>
+            <button onclick="limparLog()">Limpar Log</button>
+        </div>
+    </div>
+
+    <script>
+        let participantesTeste = [];
+        let logContainer;
+
+        document.addEventListener('DOMContentLoaded', function() {
+            logContainer = document.getElementById('log');
+            verificarStatusSistema();
+            carregarDadosAtuais();
+            
+            // Escutar eventos de sincronização
+            window.addEventListener('storage', function(e) {
+                if (e.key === 'sistemaPresenca') {
+                    log('🔄 Evento storage detectado - dados atualizados em outra aba');
+                    carregarDadosAtuais();
+                }
+            });
+            
+            window.addEventListener('dadosCarregados', function(e) {
+                log('✅ Evento dadosCarregados recebido');
+                carregarDadosAtuais();
+            });
+            
+            window.addEventListener('dadosAtualizados', function(e) {
+                log('🔄 Evento dadosAtualizados recebido');
+                carregarDadosAtuais();
+            });
+        });
+
+        function log(message) {
+            const timestamp = new Date().toLocaleTimeString();
+            const logEntry = `[${timestamp}] ${message}`;
+            logContainer.innerHTML += logEntry + '\n';
+            logContainer.scrollTop = logContainer.scrollHeight;
+            console.log(logEntry);
+        }
+
+        function verificarStatusSistema() {
+            const statusContainer = document.getElementById('system-status');
+            let status = '';
+            
+            // Verificar localStorage
+            try {
+                localStorage.setItem('teste', 'ok');
+                localStorage.removeItem('teste');
+                status += '<div class="status success">✅ localStorage: Funcionando</div>';
+            } catch (e) {
+                status += '<div class="status error">❌ localStorage: Erro - ' + e.message + '</div>';
+            }
+            
+            // Verificar banco de dados
+            if (window.databaseService) {
+                if (window.databaseService.isLocalStorage) {
+                    status += '<div class="status warning">⚠️ Banco de Dados: Usando fallback localStorage</div>';
+                } else {
+                    status += '<div class="status success">✅ Banco de Dados: SQLite disponível</div>';
+                }
+            } else {
+                status += '<div class="status error">❌ Banco de Dados: Não disponível</div>';
+            }
+            
+            // Verificar eventos
+            if (typeof CustomEvent !== 'undefined') {
+                status += '<div class="status success">✅ Eventos Customizados: Suportados</div>';
+            } else {
+                status += '<div class="status error">❌ Eventos Customizados: Não suportados</div>';
+            }
+            
+            statusContainer.innerHTML = status;
+        }
+
+        function testarLocalStorage() {
+            try {
+                const dadosTeste = {
+                    participantes: [
+                        { id: 'teste1', nome: 'João Teste', presente: true },
+                        { id: 'teste2', nome: 'Maria Teste', presente: false }
+                    ],
+                    timestamp: new Date().toISOString(),
+                    deviceId: 'teste-sync',
+                    version: '3.1'
+                };
+                
+                localStorage.setItem('sistemaPresenca', JSON.stringify(dadosTeste));
+                log('✅ Dados de teste salvos no localStorage');
+                
+                const dadosCarregados = JSON.parse(localStorage.getItem('sistemaPresenca'));
+                if (dadosCarregados && dadosCarregados.participantes.length === 2) {
+                    log('✅ Dados de teste carregados com sucesso');
+                } else {
+                    log('❌ Erro ao carregar dados de teste');
+                }
+                
+                carregarDadosAtuais();
+            } catch (error) {
+                log('❌ Erro no teste localStorage: ' + error.message);
+            }
+        }
+
+        function testarBancoDados() {
+            if (window.databaseService) {
+                log('🔄 Testando banco de dados...');
+                
+                if (window.databaseService.isLocalStorage) {
+                    log('⚠️ Banco usando fallback localStorage');
+                } else {
+                    log('✅ Banco SQLite disponível');
+                    // Aqui poderia haver testes específicos do SQLite
+                }
+            } else {
+                log('❌ Banco de dados não disponível');
+            }
+        }
+
+        function testarEventos() {
+            log('🧪 Testando eventos customizados...');
+            
+            // Disparar evento de teste
+            window.dispatchEvent(new CustomEvent('dadosAtualizados', {
+                detail: { 
+                    participantes: [
+                        { id: 'evento1', nome: 'Teste Evento', presente: true }
+                    ]
+                }
+            }));
+            
+            log('✅ Evento dadosAtualizados disparado');
+        }
+
+        function simularDados() {
+            const nomes = ['Ana Silva', 'Carlos Santos', 'Maria Oliveira', 'João Pereira', 'Lucia Costa'];
+            const participantesSimulados = nomes.map((nome, index) => ({
+                id: 'sim' + Date.now() + index,
+                nome: nome,
+                presente: Math.random() > 0.5,
+                timestamp: new Date().toISOString()
+            }));
+            
+            const dados = {
+                participantes: participantesSimulados,
+                pesquisas: [],
+                timestamp: new Date().toISOString(),
+                deviceId: 'simulacao-' + Date.now(),
+                version: '3.1'
+            };
+            
+            localStorage.setItem('sistemaPresenca', JSON.stringify(dados));
+            log(`✅ ${participantesSimulados.length} participantes simulados criados`);
+            carregarDadosAtuais();
+        }
+
+        function adicionarParticipanteTeste() {
+            const dados = JSON.parse(localStorage.getItem('sistemaPresenca') || '{"participantes":[],"pesquisas":[]}');
+            const novoParticipante = {
+                id: 'teste' + Date.now(),
+                nome: 'Participante ' + (dados.participantes.length + 1),
+                presente: Math.random() > 0.5,
+                timestamp: new Date().toISOString()
+            };
+            
+            dados.participantes.push(novoParticipante);
+            dados.timestamp = new Date().toISOString();
+            
+            localStorage.setItem('sistemaPresenca', JSON.stringify(dados));
+            log(`✅ Participante adicionado: ${novoParticipante.nome}`);
+            carregarDadosAtuais();
+        }
+
+        function togglePresencaTeste() {
+            const dados = JSON.parse(localStorage.getItem('sistemaPresenca') || '{"participantes":[]}');
+            if (dados.participantes.length > 0) {
+                const index = Math.floor(Math.random() * dados.participantes.length);
+                dados.participantes[index].presente = !dados.participantes[index].presente;
+                dados.timestamp = new Date().toISOString();
+                
+                localStorage.setItem('sistemaPresenca', JSON.stringify(dados));
+                log(`🔄 Presença alterada: ${dados.participantes[index].nome} - ${dados.participantes[index].presente ? 'Presente' : 'Ausente'}`);
+                carregarDadosAtuais();
+            } else {
+                log('⚠️ Nenhum participante para alterar presença');
+            }
+        }
+
+        function forcarSincronizacao() {
+            log('🔄 Forçando sincronização...');
+            
+            // Disparar evento storage manualmente
+            window.dispatchEvent(new StorageEvent('storage', {
+                key: 'sistemaPresenca',
+                newValue: localStorage.getItem('sistemaPresenca'),
+                oldValue: null,
+                storageArea: localStorage
+            }));
+            
+            log('✅ Evento de sincronização disparado');
+        }
+
+        function carregarDadosAtuais() {
+            const dadosContainer = document.getElementById('dados-atuais');
+            const dados = localStorage.getItem('sistemaPresenca');
+            
+            if (dados) {
+                try {
+                    const dadosParseados = JSON.parse(dados);
+                    const participantes = dadosParseados.participantes || [];
+                    const presentes = participantes.filter(p => p.presente).length;
+                    
+                    let html = `
+                        <div class="status info">
+                            📊 Total de Participantes: ${participantes.length}<br>
+                            ✅ Presentes: ${presentes}<br>
+                            ❌ Ausentes: ${participantes.length - presentes}<br>
+                            ⏰ Última Atualização: ${dadosParseados.timestamp ? new Date(dadosParseados.timestamp).toLocaleString() : 'N/A'}<br>
+                            📱 Device ID: ${dadosParseados.deviceId || 'N/A'}<br>
+                            🔢 Versão: ${dadosParseados.version || 'N/A'}
+                        </div>
+                    `;
+                    
+                    if (participantes.length > 0) {
+                        html += '<h4>Participantes:</h4><ul>';
+                        participantes.forEach(p => {
+                            html += `<li>${p.nome} - ${p.presente ? '✅ Presente' : '❌ Ausente'}</li>`;
+                        });
+                        html += '</ul>';
+                    }
+                    
+                    dadosContainer.innerHTML = html;
+                } catch (error) {
+                    dadosContainer.innerHTML = '<div class="status error">❌ Erro ao carregar dados: ' + error.message + '</div>';
+                }
+            } else {
+                dadosContainer.innerHTML = '<div class="status warning">⚠️ Nenhum dado encontrado</div>';
+            }
+        }
+
+        function limparTudo() {
+            if (confirm('Tem certeza que deseja limpar todos os dados?')) {
+                localStorage.removeItem('sistemaPresenca');
+                localStorage.removeItem('sistemaPresenca_backup');
+                log('🗑️ Todos os dados foram limpos');
+                carregarDadosAtuais();
+            }
+        }
+
+        function limparLog() {
+            logContainer.innerHTML = '';
+            log('📝 Log limpo');
+        }
+    </script>
+</body>
+</html>

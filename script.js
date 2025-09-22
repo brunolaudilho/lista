@@ -1,11 +1,10 @@
-// Variáveis globais
+// Dados globais
 let participantes = [];
 let pesquisas = [];
 let npsChart = null;
 let qualidadeChart = null;
 let instrutorChart = null;
 let databaseService;
-let syncInterval = null;
 
 // Inicialização
 document.addEventListener('DOMContentLoaded', function() {
@@ -53,37 +52,23 @@ document.addEventListener('DOMContentLoaded', function() {
             // Configurar upload de imagem
             configurarUploadImagem();
             
-            // Carregar imagem do cabeçalho se existir
-            carregarImagemCapa();
-            
-            // Iniciar sincronização automática
-            iniciarSincronizacao();
-            
-            // Escutar mudanças no localStorage (outras abas)
-            window.addEventListener('storage', function(e) {
-                if (e.key === 'sistemaPresenca' && e.newValue) {
-                    console.log('🔄 Dados atualizados em outra aba');
-                    const dados = JSON.parse(e.newValue);
-                    if (dados.participantes) {
-                        participantes = dados.participantes;
-                        atualizarListaParticipantes();
-                        atualizarIndicadorPresenca();
-                        console.log('✅ Interface sincronizada com outra aba');
-                    }
-                }
-            });
-            
             console.log('✅ Aplicação inicializada com sucesso!');
             
         } catch (error) {
             console.error('❌ Erro na inicialização:', error);
         }
     }
+});
+            configurarUploadImagem();
+        } catch (error) {
+            console.error('Erro na inicialização:', error);
+            // Fallback para localStorage se SQLite falhar
+            carregarDadosLocal();
+        }
+    }
     
-    // Parar sincronização quando a página for fechada
-    window.addEventListener('beforeunload', () => {
-        pararSincronizacao();
-    });
+    // Executar inicialização
+    inicializar();
 });
 
 // Função para carregar dados do SQLite
@@ -92,22 +77,13 @@ async function carregarDados() {
         if (window.databaseService && !window.databaseService.isLocalStorage) {
             console.log('📊 Carregando dados do SQLite...');
             
-            // Carregar participantes (método correto é getParticipants, não getAllParticipants)
-            participantes = await window.databaseService.getParticipants();
+            // Carregar participantes
+            participantes = await window.databaseService.getAllParticipants();
             console.log('Participantes carregados do SQLite:', participantes.length);
             
-            // Carregar pesquisas (se houver método disponível)
-            if (typeof window.databaseService.getAllSurveys === 'function') {
-                pesquisas = await window.databaseService.getAllSurveys();
-                console.log('Pesquisas carregadas do SQLite:', pesquisas.length);
-            } else {
-                // Carregar pesquisas do localStorage como fallback
-                const dadosLocal = localStorage.getItem('sistemaPresenca');
-                if (dadosLocal) {
-                    const dados = JSON.parse(dadosLocal);
-                    pesquisas = dados.pesquisas || [];
-                }
-            }
+            // Carregar pesquisas
+            pesquisas = await window.databaseService.getAllSurveys();
+            console.log('Pesquisas carregadas do SQLite:', pesquisas.length);
             
             // Atualizar interface
             atualizarListaParticipantes();
@@ -185,9 +161,9 @@ async function adicionarParticipante() {
     }
     
     try {
-        if (window.databaseService && !window.databaseService.isLocalStorage) {
+        if (databaseService) {
             // Usar SQLite
-            const novoParticipante = await window.databaseService.addParticipant(nome, depto);
+            const novoParticipante = await databaseService.addParticipant(nome, depto);
             participantes.push(novoParticipante);
         } else {
             // Fallback para localStorage
@@ -221,18 +197,26 @@ async function togglePresenca(id) {
         const novoStatus = !participante.presente;
         
         try {
-            // Atualizar dados locais
-            participante.presente = novoStatus;
-            participante.horarioCheckIn = novoStatus ? new Date().toLocaleTimeString() : null;
-            
-            // Atualizar no banco de dados se disponível
-            if (window.databaseService && !window.databaseService.isLocalStorage) {
-                await window.databaseService.markPresent(id, novoStatus);
+            if (isSupabaseReady) {
+                // Atualizar no Supabase
+                const participanteAtualizado = await window.supabaseService.updateParticipantPresence(id, novoStatus);
+                
+                // Atualizar dados locais
+                participante.presente = participanteAtualizado.present;
+                participante.horarioCheckIn = participanteAtualizado.arrival_time ? 
+                    new Date(participanteAtualizado.arrival_time).toLocaleTimeString() : null;
+            } else {
+                // Fallback para localStorage
+                participante.presente = novoStatus;
+                participante.horarioCheckIn = novoStatus ? new Date().toLocaleTimeString() : null;
             }
             
             atualizarListaParticipantes();
             atualizarIndicadorPresenca();
-            salvarDados();
+            
+            if (!isSupabaseReady) {
+                salvarDados();
+            }
             
         } catch (error) {
             console.error('Erro ao atualizar presença:', error);
@@ -246,21 +230,21 @@ async function removerParticipante(id) {
         try {
             console.log(`🔄 Iniciando remoção do participante ${id}...`);
             
+            if (isSupabaseReady) {
+                // Remover do Supabase
+                console.log(`📡 Removendo participante ${id} do Supabase...`);
+                const removido = await window.supabaseService.removeParticipant(id);
+                
+                if (!removido) {
+                    console.warn(`⚠️ Participante ${id} não foi encontrado no Supabase`);
+                    // Mesmo assim, remover da lista local se existir
+                }
+            }
+            
             // Verificar se existe na lista local antes de remover
             const participanteLocal = participantes.find(p => p.id === id);
             if (participanteLocal) {
                 console.log(`📋 Participante encontrado na lista local:`, participanteLocal);
-                
-                // Remover do banco de dados SQLite se disponível
-                if (window.databaseService && !window.databaseService.isLocalStorage) {
-                    console.log(`🗄️ Removendo do banco SQLite...`);
-                    const removidoBanco = await window.databaseService.removeParticipant(id);
-                    if (removidoBanco) {
-                        console.log(`✅ Participante ${id} removido do banco SQLite`);
-                    } else {
-                        console.warn(`⚠️ Falha ao remover participante ${id} do banco SQLite`);
-                    }
-                }
                 
                 // Remover dos dados locais
                 const tamanhoAntes = participantes.length;
@@ -282,7 +266,9 @@ async function removerParticipante(id) {
             atualizarListaParticipantes();
             atualizarIndicadorPresenca();
             
-            salvarDados();
+            if (!isSupabaseReady) {
+                salvarDados();
+            }
             
             console.log(`✅ Processo de remoção do participante ${id} concluído`);
             
@@ -297,12 +283,6 @@ function atualizarListaParticipantes() {
     const lista = document.getElementById('lista-participantes');
     const totalElement = document.getElementById('total-participantes');
     const presentesElement = document.getElementById('presentes');
-    
-    // Verificar se os elementos existem antes de usar
-    if (!lista || !totalElement || !presentesElement) {
-        console.warn('⚠️ Elementos DOM não encontrados para atualizar lista de participantes');
-        return;
-    }
     
     const presentes = participantes.filter(p => p.presente).length;
     
@@ -518,7 +498,31 @@ function configurarFormularioPesquisa() {
                 timestamp: new Date().toLocaleString()
             };
             
-            pesquisas.push(pesquisa);
+            if (isSupabaseReady) {
+                // Salvar no Supabase
+                const novaPesquisa = await window.supabaseService.addSurvey(
+                    'Participante Anônimo', // Nome do participante
+                    parseInt(npsScore),
+                    document.getElementById('qualidade').value,
+                    document.getElementById('instrutor').value,
+                    document.getElementById('comentarios').value
+                );
+                
+                // Converter formato Supabase para formato local
+                const pesquisaLocal = {
+                    participantName: novaPesquisa.participant_name,
+                    npsScore: novaPesquisa.nps_score,
+                    qualityRating: novaPesquisa.quality_rating,
+                    instructorRating: novaPesquisa.instructor_rating,
+                    comments: novaPesquisa.comments,
+                    timestamp: novaPesquisa.created_at
+                };
+                
+                pesquisas.push(pesquisaLocal);
+            } else {
+                // Fallback para localStorage
+                pesquisas.push(pesquisa);
+            }
             
             // Resetar formulário
             form.reset();
@@ -526,7 +530,10 @@ function configurarFormularioPesquisa() {
             
             // Atualizar resultados
             atualizarResultadosPesquisa();
-            salvarDados();
+            
+            if (!isSupabaseReady) {
+                salvarDados();
+            }
             
             alert('Pesquisa enviada com sucesso! Obrigado pelo seu feedback.');
             
@@ -538,38 +545,43 @@ function configurarFormularioPesquisa() {
 }
 
 function atualizarResultadosPesquisa() {
-    const totalRespostas = document.getElementById('total-respostas');
-    const mediaNPS = document.getElementById('media-nps');
-    const mediaQualidade = document.getElementById('media-qualidade');
-    const mediaInstrutor = document.getElementById('media-instrutor');
-    
-    // Verificar se os elementos existem antes de usar
-    if (!totalRespostas || !mediaNPS || !mediaQualidade || !mediaInstrutor) {
-        console.warn('⚠️ Elementos DOM não encontrados para atualizar resultados de pesquisa');
-        return;
-    }
-    
     if (pesquisas.length === 0) {
-        totalRespostas.textContent = '0';
-        mediaNPS.textContent = '0.0';
-        mediaQualidade.textContent = '0.0';
-        mediaInstrutor.textContent = '0.0';
+        // Limpar gráficos se não houver dados
+        limparGraficos();
         return;
     }
     
-    const totalNPS = pesquisas.reduce((sum, p) => sum + p.nps, 0);
-    const totalQualidade = pesquisas.reduce((sum, p) => sum + parseInt(p.qualidade), 0);
-    const totalInstrutor = pesquisas.reduce((sum, p) => sum + parseInt(p.instrutor), 0);
+    const promotores = pesquisas.filter(p => p.nps >= 9).length;
+    const neutros = pesquisas.filter(p => p.nps >= 7 && p.nps <= 8).length;
+    const detratores = pesquisas.filter(p => p.nps <= 6).length;
+    const total = pesquisas.length;
     
-    totalRespostas.textContent = pesquisas.length;
-    mediaNPS.textContent = (totalNPS / pesquisas.length).toFixed(1);
-    mediaQualidade.textContent = (totalQualidade / pesquisas.length).toFixed(1);
-    mediaInstrutor.textContent = (totalInstrutor / pesquisas.length).toFixed(1);
+    const nps = Math.round(((promotores - detratores) / total) * 100);
+    
+    document.getElementById('nps-final').textContent = nps;
+    document.getElementById('promotores').textContent = promotores;
+    document.getElementById('neutros').textContent = neutros;
+    document.getElementById('detratores').textContent = detratores;
+    document.getElementById('total-respostas').textContent = total;
+    
+    // Colorir o NPS baseado no valor
+    const npsElement = document.getElementById('nps-final');
+    npsElement.className = '';
+    if (nps >= 70) {
+        npsElement.classList.add('nps-excellent');
+    } else if (nps >= 50) {
+        npsElement.classList.add('nps-good');
+    } else if (nps >= 0) {
+        npsElement.classList.add('nps-average');
+    } else {
+        npsElement.classList.add('nps-poor');
+    }
     
     // Atualizar gráficos
     atualizarGraficos();
 }
 
+// Funções para gráficos
 function atualizarGraficos() {
     criarGraficoNPS();
     criarGraficoQualidade();
@@ -592,43 +604,59 @@ function limparGraficos() {
 }
 
 function criarGraficoNPS() {
-    const ctx = document.getElementById('nps-chart').getContext('2d');
+    const ctx = document.getElementById('npsChart');
+    if (!ctx) return;
     
     if (npsChart) {
         npsChart.destroy();
     }
     
-    // Contar respostas por categoria NPS
-    let detratores = 0;
-    let neutros = 0;
-    let promotores = 0;
-    
-    pesquisas.forEach(p => {
-        if (p.nps <= 6) detratores++;
-        else if (p.nps <= 8) neutros++;
-        else promotores++;
-    });
+    const promotores = pesquisas.filter(p => p.nps >= 9).length;
+    const neutros = pesquisas.filter(p => p.nps >= 7 && p.nps <= 8).length;
+    const detratores = pesquisas.filter(p => p.nps <= 6).length;
     
     npsChart = new Chart(ctx, {
-        type: 'doughnut',
+        type: 'bar',
         data: {
             labels: ['Detratores (0-6)', 'Neutros (7-8)', 'Promotores (9-10)'],
             datasets: [{
+                label: 'Número de Respostas',
                 data: [detratores, neutros, promotores],
-                backgroundColor: ['#ff6b6b', '#feca57', '#48dbfb'],
-                borderWidth: 2,
-                borderColor: '#fff'
+                backgroundColor: [
+            '#F37021',  // Laranja para detratores
+            '#ffa500',  // Laranja claro para neutros  
+            '#00578E'   // Azul para promotores
+        ],
+        borderColor: [
+            '#e55a00',
+            '#ff8c00',
+            '#003d66'
+        ],
+                borderWidth: 2
             }]
         },
         options: {
             responsive: true,
+            maintainAspectRatio: false,
             plugins: {
                 legend: {
-                    position: 'bottom'
+                    display: false
                 },
                 title: {
                     display: true,
-                    text: 'Distribuição NPS'
+                    text: 'Distribuição NPS',
+                    font: {
+                        size: 16,
+                        weight: 'bold'
+                    }
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    ticks: {
+                        stepSize: 1
+                    }
                 }
             }
         }
@@ -636,48 +664,51 @@ function criarGraficoNPS() {
 }
 
 function criarGraficoQualidade() {
-    const ctx = document.getElementById('qualidade-chart').getContext('2d');
+    const ctx = document.getElementById('qualidadeChart');
+    if (!ctx) return;
     
     if (qualidadeChart) {
         qualidadeChart.destroy();
     }
     
-    // Contar avaliações de qualidade
-    const contadores = [0, 0, 0, 0, 0]; // 1 a 5 estrelas
-    
+    const qualidadeCount = {};
     pesquisas.forEach(p => {
-        const qualidade = parseInt(p.qualidade);
-        if (qualidade >= 1 && qualidade <= 5) {
-            contadores[qualidade - 1]++;
-        }
+        qualidadeCount[p.qualidade] = (qualidadeCount[p.qualidade] || 0) + 1;
     });
     
+    const labels = Object.keys(qualidadeCount);
+    const data = Object.values(qualidadeCount);
+    const colors = ['#00578E', '#F37021', '#0066a3', '#e55a00', '#003d66'];
+    
     qualidadeChart = new Chart(ctx, {
-        type: 'bar',
+        type: 'pie',
         data: {
-            labels: ['1 ⭐', '2 ⭐', '3 ⭐', '4 ⭐', '5 ⭐'],
+            labels: labels,
             datasets: [{
-                label: 'Avaliações',
-                data: contadores,
-                backgroundColor: '#4ecdc4',
-                borderColor: '#45b7aa',
-                borderWidth: 1
+                data: data,
+                backgroundColor: colors.slice(0, labels.length),
+                borderColor: '#ffffff',
+                borderWidth: 2
             }]
         },
         options: {
             responsive: true,
-            scales: {
-                y: {
-                    beginAtZero: true,
-                    ticks: {
-                        stepSize: 1
-                    }
-                }
-            },
+            maintainAspectRatio: false,
             plugins: {
+                legend: {
+                    position: 'bottom',
+                    labels: {
+                        padding: 20,
+                        usePointStyle: true
+                    }
+                },
                 title: {
                     display: true,
-                    text: 'Qualidade do Evento'
+                    text: 'Avaliação da Qualidade',
+                    font: {
+                        size: 16,
+                        weight: 'bold'
+                    }
                 }
             }
         }
@@ -685,48 +716,51 @@ function criarGraficoQualidade() {
 }
 
 function criarGraficoInstrutor() {
-    const ctx = document.getElementById('instrutor-chart').getContext('2d');
+    const ctx = document.getElementById('instrutorChart');
+    if (!ctx) return;
     
     if (instrutorChart) {
         instrutorChart.destroy();
     }
     
-    // Contar avaliações do instrutor
-    const contadores = [0, 0, 0, 0, 0]; // 1 a 5 estrelas
-    
+    const instrutorCount = {};
     pesquisas.forEach(p => {
-        const instrutor = parseInt(p.instrutor);
-        if (instrutor >= 1 && instrutor <= 5) {
-            contadores[instrutor - 1]++;
-        }
+        instrutorCount[p.instrutor] = (instrutorCount[p.instrutor] || 0) + 1;
     });
     
+    const labels = Object.keys(instrutorCount);
+    const data = Object.values(instrutorCount);
+    const colors = ['#F37021', '#00578E', '#0066a3', '#e55a00', '#003d66'];
+    
     instrutorChart = new Chart(ctx, {
-        type: 'bar',
+        type: 'pie',
         data: {
-            labels: ['1 ⭐', '2 ⭐', '3 ⭐', '4 ⭐', '5 ⭐'],
+            labels: labels,
             datasets: [{
-                label: 'Avaliações',
-                data: contadores,
-                backgroundColor: '#a29bfe',
-                borderColor: '#6c5ce7',
-                borderWidth: 1
+                data: data,
+                backgroundColor: colors.slice(0, labels.length),
+                borderColor: '#ffffff',
+                borderWidth: 2
             }]
         },
         options: {
             responsive: true,
-            scales: {
-                y: {
-                    beginAtZero: true,
-                    ticks: {
-                        stepSize: 1
-                    }
-                }
-            },
+            maintainAspectRatio: false,
             plugins: {
+                legend: {
+                    position: 'bottom',
+                    labels: {
+                        padding: 20,
+                        usePointStyle: true
+                    }
+                },
                 title: {
                     display: true,
-                    text: 'Avaliação do Instrutor'
+                    text: 'Avaliação do Instrutor',
+                    font: {
+                        size: 16,
+                        weight: 'bold'
+                    }
                 }
             }
         }
@@ -736,161 +770,253 @@ function criarGraficoInstrutor() {
 function limparRespostasPesquisa() {
     if (confirm('Tem certeza que deseja limpar todas as respostas da pesquisa? Esta ação não pode ser desfeita.')) {
         pesquisas = [];
-        atualizarResultadosPesquisa();
-        limparGraficos();
         salvarDados();
-        alert('Todas as respostas foram removidas.');
+        
+        // Resetar exibição dos resultados
+        document.getElementById('nps-final').textContent = '-';
+        document.getElementById('promotores').textContent = '0';
+        document.getElementById('neutros').textContent = '0';
+        document.getElementById('detratores').textContent = '0';
+        document.getElementById('total-respostas').textContent = '0';
+        
+        // Remover classes de cor do NPS
+        const npsElement = document.getElementById('nps-final');
+        npsElement.className = '';
+        
+        alert('Todas as respostas da pesquisa foram removidas com sucesso!');
     }
 }
 
-// === FUNÇÕES AUXILIARES ===
+// === PERSISTÊNCIA DE DADOS ===
 
 function salvarDados() {
-    try {
-        const dados = {
-            participantes: participantes,
-            pesquisas: pesquisas,
-            timestamp: new Date().toISOString()
-        };
-        
-        // Salvar no localStorage (backup local)
-        localStorage.setItem('sistemaPresenca', JSON.stringify(dados));
-        console.log('Dados salvos no localStorage');
-        
-    } catch (error) {
-        console.error('Erro ao salvar dados:', error);
-    }
-}
-
-function atualizarIndicadorPresenca() {
-    const presentes = participantes.filter(p => p.presente).length;
-    const ausentes = participantes.length - presentes;
-    
-    // Verificar se os elementos existem antes de usar
-    const totalElement = document.getElementById('total-participantes');
-    const presentesElement = document.getElementById('presentes');
-    
-    if (!totalElement || !presentesElement) {
-        console.warn('⚠️ Elementos DOM não encontrados para atualizar indicador de presença');
+    if (isSupabaseReady) {
+        // Dados já são salvos automaticamente no Supabase
         return;
     }
     
-    // Atualizar números
-    totalElement.textContent = `Total: ${participantes.length}`;
-    presentesElement.textContent = `Presentes: ${presentes}`;
+    // Fallback para localStorage
+    const dados = {
+        participantes: participantes,
+        pesquisas: pesquisas
+    };
     
-    // Atualizar gráfico de presença
+    localStorage.setItem('sistemaPresenca', JSON.stringify(dados));
+}
+
+// Função para atualizar o indicador de presença
+function atualizarIndicadorPresenca() {
+    const presentes = participantes.filter(p => p.presente).length;
+    const ausentes = participantes.length - presentes;
+    const percentual = participantes.length > 0 ? Math.round((presentes / participantes.length) * 100) : 0;
+    
+    // Atualizar contadores
+    document.getElementById('presentes-count').textContent = presentes;
+    document.getElementById('ausentes-count').textContent = ausentes;
+    document.getElementById('percentual-presenca').textContent = percentual + '%';
+    
+    // Atualizar gráfico
     atualizarGraficoPresenca(presentes, ausentes);
 }
 
+// Função para criar/atualizar gráfico de presença
 function atualizarGraficoPresenca(presentes, ausentes) {
-    const canvas = document.getElementById('grafico-presenca');
-    if (!canvas) return;
-    
+    const canvas = document.getElementById('presenceChart');
     const ctx = canvas.getContext('2d');
     
     // Limpar canvas
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     
-    const total = presentes + ausentes;
-    if (total === 0) return;
+    if (presentes === 0 && ausentes === 0) {
+        // Mostrar mensagem quando não há dados
+        ctx.fillStyle = '#00578E';
+        ctx.font = '16px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText('Nenhum participante cadastrado', canvas.width / 2, canvas.height / 2);
+        return;
+    }
     
+    const total = presentes + ausentes;
     const centerX = canvas.width / 2;
     const centerY = canvas.height / 2;
-    const radius = Math.min(centerX, centerY) - 10;
+    const radius = Math.min(centerX, centerY) - 20;
     
     // Desenhar gráfico de pizza
-    let startAngle = 0;
+    let startAngle = -Math.PI / 2;
     
-    // Presentes (verde)
+    // Fatia dos presentes
     if (presentes > 0) {
         const presentesAngle = (presentes / total) * 2 * Math.PI;
         ctx.beginPath();
         ctx.moveTo(centerX, centerY);
         ctx.arc(centerX, centerY, radius, startAngle, startAngle + presentesAngle);
         ctx.closePath();
-        ctx.fillStyle = '#4CAF50';
+        ctx.fillStyle = '#00578E';
         ctx.fill();
         startAngle += presentesAngle;
     }
     
-    // Ausentes (vermelho)
+    // Fatia dos ausentes
     if (ausentes > 0) {
         const ausentesAngle = (ausentes / total) * 2 * Math.PI;
         ctx.beginPath();
         ctx.moveTo(centerX, centerY);
         ctx.arc(centerX, centerY, radius, startAngle, startAngle + ausentesAngle);
         ctx.closePath();
-        ctx.fillStyle = '#f44336';
+        ctx.fillStyle = '#F37021';
         ctx.fill();
     }
     
     // Desenhar borda
     ctx.beginPath();
     ctx.arc(centerX, centerY, radius, 0, 2 * Math.PI);
-    ctx.strokeStyle = '#ddd';
+    ctx.strokeStyle = '#dee2e6';
     ctx.lineWidth = 2;
     ctx.stroke();
 }
 
+// Função para filtrar participantes por nome
 function filtrarParticipantes() {
-    const filtro = document.getElementById('filtro-participantes').value.toLowerCase();
-    const participantesItems = document.querySelectorAll('.participant-item');
+    const pesquisa = document.getElementById('pesquisa-participante').value.toLowerCase();
+    const clearBtn = document.getElementById('clear-search');
+    const participantItems = document.querySelectorAll('.participant-item');
+    let resultadosEncontrados = 0;
     
-    participantesItems.forEach(item => {
+    // Mostrar/ocultar botão de limpar pesquisa
+    if (pesquisa.length > 0) {
+        clearBtn.style.display = 'block';
+    } else {
+        clearBtn.style.display = 'none';
+    }
+    
+    // Filtrar participantes
+    participantItems.forEach(item => {
         const nome = item.querySelector('.participant-name').textContent.toLowerCase();
-        const depto = item.querySelector('.participant-dept').textContent.toLowerCase();
-        
-        if (nome.includes(filtro) || depto.includes(filtro)) {
-            item.style.display = 'flex';
+        if (nome.includes(pesquisa)) {
+            item.classList.remove('hidden');
+            resultadosEncontrados++;
         } else {
-            item.style.display = 'none';
+            item.classList.add('hidden');
         }
     });
     
-    // Atualizar contador de resultados
-    const visibleItems = document.querySelectorAll('.participant-item[style="display: flex;"], .participant-item:not([style*="display: none"])');
-    const resultadoFiltro = document.getElementById('resultado-filtro');
-    
-    // Verificar se o elemento existe antes de usar
-    if (!resultadoFiltro) {
-        console.warn('⚠️ Elemento resultado-filtro não encontrado');
-        return;
-    }
-    
-    if (filtro.trim() === '') {
-        resultadoFiltro.textContent = '';
-    } else {
-        const count = Array.from(visibleItems).filter(item => 
-            !item.style.display || item.style.display !== 'none'
-        ).length;
-        resultadoFiltro.textContent = `${count} resultado(s) encontrado(s)`;
+    // Mostrar mensagem quando não há resultados
+    let noResultsMsg = document.querySelector('.no-results');
+    if (resultadosEncontrados === 0 && pesquisa.length > 0 && participantItems.length > 0) {
+        if (!noResultsMsg) {
+            noResultsMsg = document.createElement('div');
+            noResultsMsg.className = 'no-results';
+            noResultsMsg.innerHTML = `
+                <i class="fas fa-search"></i>
+                <p>Nenhum participante encontrado para "${pesquisa}"</p>
+            `;
+            document.getElementById('lista-participantes').appendChild(noResultsMsg);
+        } else {
+            noResultsMsg.innerHTML = `
+                <i class="fas fa-search"></i>
+                <p>Nenhum participante encontrado para "${pesquisa}"</p>
+            `;
+            noResultsMsg.style.display = 'block';
+        }
+    } else if (noResultsMsg) {
+        noResultsMsg.style.display = 'none';
     }
 }
 
+// Função para limpar pesquisa
 function limparPesquisa() {
-    const filtroElement = document.getElementById('filtro-participantes');
-    const resultadoElement = document.getElementById('resultado-filtro');
-    
-    // Verificar se os elementos existem antes de usar
-    if (!filtroElement || !resultadoElement) {
-        console.warn('⚠️ Elementos de filtro não encontrados');
-        return;
-    }
-    
-    filtroElement.value = '';
+    document.getElementById('pesquisa-participante').value = '';
+    document.getElementById('clear-search').style.display = 'none';
     
     // Mostrar todos os participantes
-    const participantesItems = document.querySelectorAll('.participant-item');
-    participantesItems.forEach(item => {
-        item.style.display = 'flex';
+    const participantItems = document.querySelectorAll('.participant-item');
+    participantItems.forEach(item => {
+        item.classList.remove('hidden');
     });
     
-    // Limpar resultado do filtro
-    resultadoElement.textContent = '';
+    // Ocultar mensagem de "não encontrado"
+    const noResultsMsg = document.querySelector('.no-results');
+    if (noResultsMsg) {
+        noResultsMsg.style.display = 'none';
+    }
 }
 
-// Função para processar upload de Excel
+async function carregarDados() {
+    try {
+        if (isSupabaseReady) {
+            // Carregar do Supabase
+            const participantesSupabase = await window.supabaseService.getParticipants();
+            const pesquisasSupabase = await window.supabaseService.getSurveys();
+            
+            // Converter formato Supabase para formato local
+            participantes = participantesSupabase.map(p => ({
+                id: p.id,
+                nome: p.name,
+                departamento: p.department || 'Não informado',
+                presente: p.present,
+                horarioCheckIn: p.arrival_time ? new Date(p.arrival_time).toLocaleTimeString() : null
+            }));
+            
+            pesquisas = pesquisasSupabase.map(s => ({
+                participantName: s.participant_name,
+                nps: s.nps_score,
+                qualidade: s.quality_rating,
+                instrutor: s.instructor_rating,
+                comentarios: s.comments || ''
+            }));
+            
+            console.log('✅ Dados carregados do Supabase');
+        } else {
+            // Carregar do localStorage
+            const dadosParticipantes = localStorage.getItem('participantes');
+            const dadosPesquisas = localStorage.getItem('pesquisas');
+            
+            if (dadosParticipantes) {
+                participantes = JSON.parse(dadosParticipantes);
+            }
+            
+            if (dadosPesquisas) {
+                pesquisas = JSON.parse(dadosPesquisas);
+            }
+            
+            console.log('📦 Dados carregados do localStorage');
+        }
+        
+        // Atualizar interface
+        atualizarListaParticipantes();
+        atualizarIndicadorPresenca();
+        atualizarResultadosPesquisa();
+        carregarImagemCapa();
+        
+    } catch (error) {
+        console.error('Erro ao carregar dados:', error);
+        
+        // Fallback para localStorage em caso de erro
+        const dadosParticipantes = localStorage.getItem('participantes');
+        const dadosPesquisas = localStorage.getItem('pesquisas');
+        
+        if (dadosParticipantes) {
+            participantes = JSON.parse(dadosParticipantes);
+        }
+        
+        if (dadosPesquisas) {
+            pesquisas = JSON.parse(dadosPesquisas);
+        }
+        
+        atualizarListaParticipantes();
+        atualizarIndicadorPresenca();
+        atualizarResultadosPesquisa();
+        carregarImagemCapa();
+    }
+}
+
+// === UTILITÁRIOS ===
+
+// Permitir adicionar participante com Enter
+// DOMContentLoaded duplicado removido - funcionalidades movidas para o primeiro
+
+// === FUNÇÕES DE UPLOAD EXCEL ===
+
 async function processarExcel(event) {
     const file = event.target.files[0];
     if (!file) return;
@@ -911,118 +1037,192 @@ async function processarExcel(event) {
             // Processar dados
             let adicionados = 0;
             let duplicados = 0;
+            let errosSupabase = 0;
             
             // Mostrar progresso
             const progressDiv = document.createElement('div');
             progressDiv.innerHTML = `
                 <div style="position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); 
-                           background: white; padding: 20px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); 
-                           z-index: 1000; text-align: center;">
-                    <div style="margin-bottom: 10px;">Processando arquivo Excel...</div>
-                    <div style="width: 200px; height: 20px; background: #f0f0f0; border-radius: 10px; overflow: hidden;">
-                        <div id="progress-bar" style="height: 100%; background: #4CAF50; width: 0%; transition: width 0.3s;"></div>
+                           background: white; padding: 20px; border-radius: 10px; box-shadow: 0 4px 20px rgba(0,0,0,0.3); 
+                           z-index: 10000; text-align: center;">
+                    <h3>📊 Processando Excel...</h3>
+                    <div id="progress-text">Iniciando...</div>
+                    <div style="width: 300px; height: 20px; background: #f0f0f0; border-radius: 10px; margin: 10px 0;">
+                        <div id="progress-bar" style="width: 0%; height: 100%; background: #007bff; border-radius: 10px; transition: width 0.3s;"></div>
                     </div>
-                    <div id="progress-text" style="margin-top: 10px; font-size: 12px; color: #666;">0%</div>
                 </div>
             `;
             document.body.appendChild(progressDiv);
             
-            // Simular progresso
-            let progress = 0;
-            const progressInterval = setInterval(() => {
-                progress += Math.random() * 20;
-                if (progress > 90) progress = 90;
-                
-                const progressBar = document.getElementById('progress-bar');
-                const progressText = document.getElementById('progress-text');
-                
-                if (progressBar && progressText) {
-                    progressBar.style.width = progress + '%';
-                    progressText.textContent = Math.round(progress) + '%';
-                }
-            }, 100);
+            const updateProgress = (current, total, text) => {
+                const percent = Math.round((current / total) * 100);
+                document.getElementById('progress-text').textContent = text;
+                document.getElementById('progress-bar').style.width = percent + '%';
+            };
             
-            // Pular primeira linha se for cabeçalho
-            const startRow = jsonData[0] && (
-                jsonData[0].some(cell => 
-                    typeof cell === 'string' && 
-                    (cell.toLowerCase().includes('nome') || 
-                     cell.toLowerCase().includes('name') ||
-                     cell.toLowerCase().includes('participante'))
-                )
-            ) ? 1 : 0;
-            
-            for (let i = startRow; i < jsonData.length; i++) {
-                const row = jsonData[i];
+            for (let index = 0; index < jsonData.length; index++) {
+                const row = jsonData[index];
                 
-                // Verificar se a linha tem dados
-                if (!row || row.length === 0 || !row[0]) continue;
+                // Pular linha de cabeçalho se existir
+                if (index === 0 && (row[0] === 'Nome' || row[0] === 'Nome Completo')) continue;
                 
-                const nome = String(row[0]).trim();
-                const departamento = row[1] ? String(row[1]).trim() : 'Não informado';
+                const nome = row[0] ? row[0].toString().trim() : '';
+                const departamento = row[1] ? row[1].toString().trim() : 'Não informado';
                 
-                if (nome === '' || nome === 'undefined') continue;
+                updateProgress(index + 1, jsonData.length, `Processando: ${nome || 'linha ' + (index + 1)}`);
                 
-                // Verificar se já existe
-                const jaExiste = participantes.find(p => 
-                    (p.nome && p.nome.toLowerCase() === nome.toLowerCase()) ||
-                    (p.name && p.name.toLowerCase() === nome.toLowerCase())
-                );
-                
-                if (jaExiste) {
-                    duplicados++;
-                    continue;
+                if (nome && nome !== '') {
+                    // Verificar se já existe (local)
+                    const existeLocal = participantes.find(p => 
+                        (p.nome?.toLowerCase() === nome.toLowerCase()) || 
+                        (p.name?.toLowerCase() === nome.toLowerCase())
+                    );
+                    
+                    if (!existeLocal) {
+                        try {
+                            if (isSupabaseReady) {
+                                // Usar inserção em lote se houver múltiplos participantes
+                                const participantesToAdd = [];
+                                
+                                // Coletar todos os participantes válidos primeiro
+                                for (let i = index; i < jsonData.length; i++) {
+                                    const currentRow = jsonData[i];
+                                    if (i === 0 && (currentRow[0] === 'Nome' || currentRow[0] === 'Nome Completo')) continue;
+                                    
+                                    const currentNome = currentRow[0] ? currentRow[0].toString().trim() : '';
+                                    const currentDepartamento = currentRow[1] ? currentRow[1].toString().trim() : 'Não informado';
+                                    
+                                    if (currentNome && currentNome !== '') {
+                                        const existeLocal = participantes.find(p => 
+                                            (p.nome?.toLowerCase() === currentNome.toLowerCase()) || 
+                                            (p.name?.toLowerCase() === currentNome.toLowerCase())
+                                        );
+                                        
+                                        if (!existeLocal) {
+                                            participantesToAdd.push({
+                                                name: currentNome,
+                                                department: currentDepartamento
+                                            });
+                                        }
+                                    }
+                                }
+                                
+                                if (participantesToAdd.length > 0) {
+                                    // Usar inserção em lote
+                                    const novosParticipantes = await window.supabaseService.addParticipants(participantesToAdd);
+                                    
+                                    // Converter formato Supabase para formato local
+                                    novosParticipantes.forEach(novoParticipante => {
+                                        const participanteLocal = {
+                                            id: novoParticipante.id,
+                                            nome: novoParticipante.name,
+                                            departamento: novoParticipante.department || 'Não informado',
+                                            presente: novoParticipante.present,
+                                            horarioCheckIn: novoParticipante.arrival_time ? new Date(novoParticipante.arrival_time).toLocaleTimeString() : null
+                                        };
+                                        
+                                        participantes.push(participanteLocal);
+                                        adicionados++;
+                                    });
+                                    
+                                    // Pular para o final do loop já que processamos todos
+                                    index = jsonData.length;
+                                    updateProgress(jsonData.length, jsonData.length, 'Concluído!');
+                                } else {
+                                    // Usar método individual como fallback
+                                    const novoParticipante = await window.supabaseService.addParticipant(nome, departamento);
+                                    
+                                    const participanteLocal = {
+                                        id: novoParticipante.id,
+                                        nome: novoParticipante.name,
+                                        departamento: novoParticipante.department || 'Não informado',
+                                        presente: novoParticipante.present,
+                                        horarioCheckIn: novoParticipante.arrival_time ? new Date(novoParticipante.arrival_time).toLocaleTimeString() : null
+                                    };
+                                    
+                                    participantes.push(participanteLocal);
+                                    adicionados++;
+                                }
+                            } else {
+                                // Fallback para localStorage
+                                const participante = {
+                                    id: Date.now() + Math.random(),
+                                    nome: nome,
+                                    departamento: departamento,
+                                    presente: false,
+                                    horarioCheckIn: null
+                                };
+                                
+                                participantes.push(participante);
+                                adicionados++;
+                            }
+                        } catch (error) {
+                            console.error('Erro ao adicionar participante via Supabase:', nome, error);
+                            errosSupabase++;
+                            
+                            // Fallback para localStorage em caso de erro
+                            const participante = {
+                                id: Date.now() + Math.random(),
+                                nome: nome,
+                                departamento: departamento,
+                                presente: false,
+                                horarioCheckIn: null
+                            };
+                            
+                            participantes.push(participante);
+                            adicionados++;
+                        }
+                    } else {
+                        duplicados++;
+                    }
                 }
                 
-                // Adicionar participante
-                const participante = {
-                    id: Date.now() + Math.random(),
-                    nome: nome,
-                    departamento: departamento,
-                    presente: false,
-                    horarioCheckIn: null
-                };
-                
-                participantes.push(participante);
-                adicionados++;
+                // Pequena pausa para não sobrecarregar
+                if (index % 10 === 0) {
+                    await new Promise(resolve => setTimeout(resolve, 50));
+                }
             }
             
-            // Finalizar progresso
-            clearInterval(progressInterval);
-            const progressBar = document.getElementById('progress-bar');
-            const progressText = document.getElementById('progress-text');
+            // Remover indicador de progresso
+            document.body.removeChild(progressDiv);
             
-            if (progressBar && progressText) {
-                progressBar.style.width = '100%';
-                progressText.textContent = '100%';
+            // Atualizar interface
+            atualizarListaParticipantes();
+            atualizarIndicadorPresenca();
+            
+            if (!isSupabaseReady) {
+                salvarDados(); // Salvar no localStorage se não estiver usando Supabase
             }
             
-            setTimeout(() => {
-                progressDiv.remove();
-                
-                // Atualizar interface
-                atualizarListaParticipantes();
-                atualizarIndicadorPresenca();
-                salvarDados();
-                
-                // Mostrar resultado
-                let mensagem = `Importação concluída!\n\n`;
-                mensagem += `✅ Adicionados: ${adicionados}\n`;
-                if (duplicados > 0) mensagem += `⚠️ Duplicados ignorados: ${duplicados}\n`;
-                
-                alert(mensagem);
-                
-                // Limpar input
-                event.target.value = '';
-            }, 500);
+            // Mostrar resultado
+            let mensagem = `📊 Upload concluído!\n\n`;
+            mensagem += `✅ Participantes adicionados: ${adicionados}\n`;
+            if (duplicados > 0) {
+                mensagem += `⚠️ Participantes duplicados (ignorados): ${duplicados}\n`;
+            }
+            if (errosSupabase > 0) {
+                mensagem += `❌ Erros no Supabase (salvos localmente): ${errosSupabase}\n`;
+            }
+            if (isSupabaseReady) {
+                mensagem += `\n🔄 Dados sincronizados com Supabase!`;
+            } else {
+                mensagem += `\n💾 Dados salvos localmente (Supabase indisponível)`;
+            }
+            
+            alert(mensagem);
+            
+            // Limpar input
+            event.target.value = '';
             
         } catch (error) {
-            console.error('Erro ao processar Excel:', error);
-            alert('Erro ao processar arquivo Excel. Verifique se o formato está correto.');
+            // Remover indicador de progresso em caso de erro
+            const progressDiv = document.querySelector('div[style*="position: fixed"]');
+            if (progressDiv) {
+                document.body.removeChild(progressDiv);
+            }
             
-            // Remover progresso em caso de erro
-            const progressDiv = document.querySelector('[style*="position: fixed"]');
-            if (progressDiv) progressDiv.remove();
+            console.error('Erro ao processar Excel:', error);
+            alert('❌ Erro ao processar o arquivo Excel. Verifique se o formato está correto.\n\nDetalhes: ' + error.message);
         }
     };
     
@@ -1031,8 +1231,8 @@ async function processarExcel(event) {
 
 function baixarModeloExcel() {
     // Criar dados de exemplo
-    const dadosExemplo = [
-        ['Nome', 'Departamento'],
+    const dadosModelo = [
+        ['Nome Completo', 'Departamento'],
         ['João Silva', 'TI'],
         ['Maria Santos', 'RH'],
         ['Pedro Oliveira', 'Vendas'],
@@ -1041,15 +1241,16 @@ function baixarModeloExcel() {
     
     // Criar workbook
     const wb = XLSX.utils.book_new();
-    const ws = XLSX.utils.aoa_to_sheet(dadosExemplo);
+    const ws = XLSX.utils.aoa_to_sheet(dadosModelo);
     
-    // Adicionar worksheet ao workbook
+    // Adicionar planilha ao workbook
     XLSX.utils.book_append_sheet(wb, ws, 'Participantes');
     
-    // Fazer download
-    XLSX.writeFile(wb, 'modelo_participantes.xlsx');
+    // Baixar arquivo
+    XLSX.writeFile(wb, 'modelo-participantes.xlsx');
 }
 
+// Função para exportar dados (útil para backup)
 function exportarDados() {
     const dados = {
         participantes: participantes,
@@ -1062,57 +1263,54 @@ function exportarDados() {
     
     const link = document.createElement('a');
     link.href = URL.createObjectURL(dataBlob);
-    link.download = `dados_evento_${new Date().toISOString().split('T')[0]}.json`;
+    link.download = `dados-treinamento-${new Date().toISOString().split('T')[0]}.json`;
     link.click();
 }
 
+// Função para limpar todos os dados
 async function limparListaParticipantes() {
-    if (confirm('Tem certeza que deseja limpar toda a lista de participantes? Esta ação não pode ser desfeita.')) {
-        try {
-            // Limpar do banco SQLite se disponível
-            if (window.databaseService && !window.databaseService.isLocalStorage) {
-                console.log('🗄️ Limpando participantes do banco SQLite...');
-                await window.databaseService.clearAllData();
-                console.log('✅ Participantes removidos do banco SQLite');
-            }
-            
-            participantes = [];
-            
-            // Atualizar interface
-            atualizarListaParticipantes();
-            atualizarIndicadorPresenca();
-            salvarDados();
-            
-            alert('Lista de participantes limpa com sucesso.');
-            
-        } catch (error) {
-            console.error('Erro ao limpar lista:', error);
-            alert('Erro ao limpar lista. Tente novamente.');
-        }
+    // Verificar se há participantes na lista
+    if (participantes.length === 0) {
+        alert('A lista já está vazia.');
+        return;
     }
-}
-
-async function limparDados() {
-    if (confirm('Tem certeza que deseja limpar TODOS os dados (participantes e pesquisas)? Esta ação não pode ser desfeita.')) {
+    
+    // Mostrar alerta de confirmação
+    const confirmacao = confirm(
+        `⚠️ ATENÇÃO!\n\nTodos os dados serão apagados permanentemente:\n\n` +
+        `• ${participantes.length} participante(s)\n` +
+        `• Registros de presença\n` +
+        `• Histórico de sorteios\n` +
+        `• Pesquisas de satisfação\n\n` +
+        `Esta ação não pode ser desfeita.\n\n` +
+        `Deseja realmente limpar todos os dados?`
+    );
+    
+    if (confirmacao) {
         try {
-            // Limpar do banco SQLite se disponível
-            if (window.databaseService && !window.databaseService.isLocalStorage) {
-                console.log('🗄️ Limpando todos os dados do banco SQLite...');
-                await window.databaseService.clearAllData();
-                console.log('✅ Todos os dados removidos do banco SQLite');
-            }
-            
+            // Limpar todos os dados
             participantes = [];
             pesquisas = [];
+            
+            if (isSupabaseReady) {
+                // Limpar dados no Supabase
+                await window.supabaseService.clearAllData();
+            } else {
+                // Limpar localStorage
+                localStorage.removeItem('participantes');
+                localStorage.removeItem('pesquisas');
+                localStorage.removeItem('imagemCapa');
+            }
             
             // Atualizar interface
             atualizarListaParticipantes();
             atualizarIndicadorPresenca();
             atualizarResultadosPesquisa();
-            limparGraficos();
-            salvarDados();
             
-            alert('Todos os dados foram limpos com sucesso.');
+            // Remover imagem de capa
+            removerImagemCapa();
+            
+            alert('✅ Todos os dados foram limpos com sucesso!');
             
         } catch (error) {
             console.error('Erro ao limpar dados:', error);
@@ -1121,8 +1319,34 @@ async function limparDados() {
     }
 }
 
+async function limparDados() {
+    try {
+        if (isSupabaseReady) {
+            await window.supabaseService.clearAllData();
+        } else {
+            localStorage.clear();
+        }
+        
+        // Resetar variáveis
+        participantes = [];
+        pesquisas = [];
+        
+        // Atualizar interface
+        atualizarListaParticipantes();
+        atualizarIndicadorPresenca();
+        atualizarResultadosPesquisa();
+        
+        alert('Dados limpos com sucesso!');
+        
+    } catch (error) {
+        console.error('Erro ao limpar dados:', error);
+        alert('Erro ao limpar dados. Tente novamente.');
+    }
+}
+
+// Funções para gerenciamento de imagem de capa
 function configurarUploadImagem() {
-    const uploadInput = document.getElementById('upload-imagem');
+    const uploadInput = document.getElementById('cover-upload');
     
     if (uploadInput) {
         uploadInput.addEventListener('change', function(event) {
@@ -1132,46 +1356,54 @@ function configurarUploadImagem() {
             }
         });
     }
+    
+    // Carregar imagem salva se existir
+    carregarImagemCapa();
 }
 
 function processarImagemCapa(file) {
-    // Verificar se é uma imagem
+    // Validar tipo de arquivo
     if (!file.type.startsWith('image/')) {
-        alert('Por favor, selecione apenas arquivos de imagem.');
+        alert('❌ Por favor, selecione apenas arquivos de imagem.');
         return;
     }
     
-    // Verificar tamanho (máximo 5MB)
+    // Validar tamanho (máximo 5MB)
     if (file.size > 5 * 1024 * 1024) {
-        alert('A imagem deve ter no máximo 5MB.');
+        alert('❌ A imagem deve ter no máximo 5MB.');
         return;
     }
     
     const reader = new FileReader();
     reader.onload = function(e) {
-        const imagemSrc = e.target.result;
+        const imagemBase64 = e.target.result;
         
         // Salvar no localStorage
-        localStorage.setItem('imagemCapa', imagemSrc);
+        localStorage.setItem('imagemCapa', imagemBase64);
         
-        // Exibir imagem
-        exibirImagemCapa(imagemSrc);
+        // Exibir preview
+        exibirImagemCapa(imagemBase64);
         
-        // Aplicar ao cabeçalho
-        aplicarImagemCabecalho(imagemSrc);
+        // Aplicar também no cabeçalho
+        aplicarImagemCabecalho(imagemBase64);
+        
+        alert('✅ Imagem de capa atualizada com sucesso!');
     };
     
     reader.readAsDataURL(file);
 }
 
 function exibirImagemCapa(imagemSrc) {
-    const preview = document.getElementById('preview-imagem');
-    preview.innerHTML = `
-        <img src="${imagemSrc}" alt="Imagem de capa" style="max-width: 100%; height: auto; border-radius: 8px;">
-        <button onclick="removerImagemCapa()" class="btn-remover-imagem">
-            <i class="fas fa-trash"></i> Remover Imagem
-        </button>
-    `;
+    const preview = document.getElementById('cover-preview');
+    const noCover = document.getElementById('no-cover');
+    const removeBtn = document.getElementById('remove-cover');
+    
+    if (preview && noCover && removeBtn) {
+        preview.src = imagemSrc;
+        preview.style.display = 'block';
+        noCover.style.display = 'none';
+        removeBtn.style.display = 'inline-block';
+    }
 }
 
 function removerImagemCapa() {
@@ -1179,180 +1411,346 @@ function removerImagemCapa() {
         // Remover do localStorage
         localStorage.removeItem('imagemCapa');
         
-        // Limpar preview
-        document.getElementById('preview-imagem').innerHTML = '';
+        // Atualizar interface
+        const preview = document.getElementById('cover-preview');
+        const noCover = document.getElementById('no-cover');
+        const removeBtn = document.getElementById('remove-cover');
         
-        // Remover do cabeçalho
-        const header = document.querySelector('.header');
-        if (header) {
-            header.style.backgroundImage = '';
-            header.style.backgroundColor = '#2c3e50';
+        if (preview && noCover && removeBtn) {
+            preview.style.display = 'none';
+            preview.src = '';
+            noCover.style.display = 'flex';
+            removeBtn.style.display = 'none';
         }
         
-        // Limpar input
-        const uploadInput = document.getElementById('upload-imagem');
-        if (uploadInput) {
-            uploadInput.value = '';
+        // Remover também do cabeçalho
+        const headerImage = document.getElementById('header-cover-image');
+        const headerCover = document.getElementById('header-cover');
+        if (headerImage && headerCover) {
+            headerImage.style.display = 'none';
+            headerImage.src = '';
+            headerCover.style.display = 'none';
         }
         
-        alert('Imagem removida com sucesso.');
+        alert('✅ Imagem de capa removida com sucesso!');
     }
 }
 
 function carregarImagemCapa() {
-    const imagemSalva = localStorage.getItem('imagemCapa');
-    if (imagemSalva) {
-        exibirImagemCapa(imagemSalva);
-        aplicarImagemCabecalho(imagemSalva);
-    }
-}
+     const imagemSalva = localStorage.getItem('imagemCapa');
+     if (imagemSalva) {
+         exibirImagemCapa(imagemSalva);
+         // Também aplicar no cabeçalho
+         aplicarImagemCabecalho(imagemSalva);
+     }
+ }
 
-// === SISTEMA DE AUTENTICAÇÃO ADMIN ===
+// Funções de autenticação do administrador
 const SENHA_ADMIN = "admin123"; // Senha padrão (pode ser alterada)
 let currentUser = null;
 
 function showAdminLogin() {
     document.getElementById('admin-login-modal').style.display = 'flex';
+    document.getElementById('admin-password').focus();
 }
 
 function closeAdminLogin() {
     document.getElementById('admin-login-modal').style.display = 'none';
+    document.getElementById('admin-password').value = '';
+    document.getElementById('login-error').style.display = 'none';
 }
 
 async function autenticarAdmin(event) {
     event.preventDefault();
     
     const senha = document.getElementById('admin-password').value;
+    const loginError = document.getElementById('login-error');
     
-    if (senha === SENHA_ADMIN) {
-        currentUser = {
-            username: 'admin',
-            loginTime: new Date().toISOString()
-        };
-        
-        // Salvar sessão
-        sessionStorage.setItem('adminSession', JSON.stringify(currentUser));
-        
-        // Fechar modal
-        closeAdminLogin();
-        
-        // Mostrar área admin
-        document.getElementById('admin-area').style.display = 'block';
-        document.getElementById('admin-login-btn').style.display = 'none';
-        document.getElementById('admin-logout-btn').style.display = 'inline-block';
-        
-        // Limpar campo de senha
+    try {
+        if (isSupabaseReady) {
+            // Usar Supabase Auth para autenticação
+            const adminEmail = 'admin@sistema.com'; // Email padrão do admin
+            
+            try {
+                console.log('🔐 Tentando fazer login com:', adminEmail);
+                const { user } = await window.supabaseService.signIn(adminEmail, senha);
+                console.log('✅ Login bem-sucedido:', user);
+                currentUser = user;
+                
+                // Login bem-sucedido
+                document.getElementById('admin-login-modal').style.display = 'none';
+                showModule('admin');
+                document.getElementById('admin-panel').style.display = 'block';
+                
+                // Salvar estado de login (sessão)
+                sessionStorage.setItem('adminLoggedIn', 'true');
+                sessionStorage.setItem('adminUser', JSON.stringify(user));
+                
+                // Limpar campo de senha
+                document.getElementById('admin-password').value = '';
+                loginError.style.display = 'none';
+                
+            } catch (authError) {
+                console.log('❌ Erro no login Supabase:', authError.message);
+                
+                // Se o erro for de credenciais inválidas, tentar criar o usuário admin
+                if (authError.message.includes('Invalid login credentials')) {
+                    console.log('🔧 Tentando criar usuário admin...');
+                    try {
+                        // Tentar criar o usuário admin
+                        const signUpResult = await window.supabaseService.signUp(adminEmail, senha, {
+                            role: 'admin',
+                            name: 'Administrador'
+                        });
+                        console.log('✅ Usuário admin criado:', signUpResult);
+                        
+                        // Após criar, tentar fazer login novamente
+                        const { user } = await window.supabaseService.signIn(adminEmail, senha);
+                        console.log('✅ Login após criação bem-sucedido:', user);
+                        currentUser = user;
+                        
+                        // Login bem-sucedido
+                        document.getElementById('admin-login-modal').style.display = 'none';
+                        showModule('admin');
+                        document.getElementById('admin-panel').style.display = 'block';
+                        
+                        // Salvar estado de login (sessão)
+                        sessionStorage.setItem('adminLoggedIn', 'true');
+                        sessionStorage.setItem('adminUser', JSON.stringify(user));
+                        
+                        // Limpar campo de senha
+                        document.getElementById('admin-password').value = '';
+                        loginError.style.display = 'none';
+                        
+                    } catch (signUpError) {
+                        console.log('❌ Erro ao criar usuário admin:', signUpError.message);
+                        // Se falhar na criação, usar autenticação local como fallback
+                        if (senha === SENHA_ADMIN) {
+                            loginSuccess();
+                        } else {
+                            loginFailed();
+                        }
+                    }
+                } else {
+                    // Para outros erros, usar autenticação local como fallback
+                    if (senha === SENHA_ADMIN) {
+                        loginSuccess();
+                    } else {
+                        loginFailed();
+                    }
+                }
+            }
+        } else {
+            // Usar autenticação local
+            if (senha === SENHA_ADMIN) {
+                loginSuccess();
+            } else {
+                loginFailed();
+            }
+        }
+    } catch (error) {
+        console.error('Erro na autenticação:', error);
+        loginFailed();
+    }
+    
+    function loginSuccess() {
+        document.getElementById('admin-login-modal').style.display = 'none';
+        showModule('admin');
+        document.getElementById('admin-panel').style.display = 'block';
+        sessionStorage.setItem('adminLoggedIn', 'true');
         document.getElementById('admin-password').value = '';
-        
-        alert('Login realizado com sucesso!');
-        
-    } else {
-        alert('Senha incorreta!');
+        loginError.style.display = 'none';
+    }
+    
+    function loginFailed() {
+        loginError.style.display = 'block';
         document.getElementById('admin-password').value = '';
+        setTimeout(() => {
+            loginError.style.display = 'none';
+        }, 3000);
     }
 }
 
 async function logoutAdmin() {
-    if (confirm('Tem certeza que deseja sair da área administrativa?')) {
-        currentUser = null;
-        
-        // Remover sessão
-        sessionStorage.removeItem('adminSession');
-        
-        // Esconder área admin
-        document.getElementById('admin-area').style.display = 'none';
-        document.getElementById('admin-login-btn').style.display = 'inline-block';
-        document.getElementById('admin-logout-btn').style.display = 'none';
-        
-        alert('Logout realizado com sucesso!');
+    if (confirm('Tem certeza que deseja sair do painel administrativo?')) {
+        try {
+            if (isSupabaseReady && currentUser) {
+                await window.supabaseService.signOut();
+                currentUser = null;
+            }
+            
+            // Ocultar painel administrativo
+            document.getElementById('admin-panel').style.display = 'none';
+            
+            // Voltar para o módulo de presença
+            showModule('presenca');
+            
+            // Remover estado de login
+            sessionStorage.removeItem('adminLoggedIn');
+            sessionStorage.removeItem('adminUser');
+            
+        } catch (error) {
+            console.error('Erro no logout:', error);
+            // Mesmo com erro, fazer logout local
+            document.getElementById('admin-panel').style.display = 'none';
+            showModule('presenca');
+            sessionStorage.removeItem('adminLoggedIn');
+            sessionStorage.removeItem('adminUser');
+        }
     }
 }
 
 async function verificarLoginAdmin() {
-    const sessaoSalva = sessionStorage.getItem('adminSession');
+    const adminLoggedIn = sessionStorage.getItem('adminLoggedIn');
     
-    if (sessaoSalva) {
-        try {
-            currentUser = JSON.parse(sessaoSalva);
-            
-            // Verificar se a sessão não expirou (24 horas)
-            const loginTime = new Date(currentUser.loginTime);
-            const agora = new Date();
-            const diferencaHoras = (agora - loginTime) / (1000 * 60 * 60);
-            
-            if (diferencaHoras < 24) {
-                // Sessão válida
-                document.getElementById('admin-area').style.display = 'block';
-                document.getElementById('admin-login-btn').style.display = 'none';
-                document.getElementById('admin-logout-btn').style.display = 'inline-block';
-            } else {
-                // Sessão expirada
-                sessionStorage.removeItem('adminSession');
-                currentUser = null;
+    if (adminLoggedIn === 'true') {
+        if (isSupabaseReady) {
+            // Verificar se o usuário ainda está autenticado no Supabase
+            try {
+                const user = await window.supabaseService.getCurrentUser();
+                if (user) {
+                    currentUser = user;
+                    document.getElementById('admin-panel').style.display = 'block';
+                } else {
+                    // Usuário não está mais autenticado, fazer logout
+                    sessionStorage.removeItem('adminLoggedIn');
+                    sessionStorage.removeItem('adminUser');
+                }
+            } catch (error) {
+                console.error('Erro ao verificar autenticação:', error);
             }
-        } catch (error) {
-            console.error('Erro ao verificar sessão admin:', error);
-            sessionStorage.removeItem('adminSession');
-            currentUser = null;
+        } else {
+            // Usar verificação local
+            document.getElementById('admin-panel').style.display = 'block';
         }
+    }
+}
+
+// Configurar listener para mudanças de autenticação
+async function setupAuthListener() {
+    if (isSupabaseReady) {
+        window.supabaseService.onAuthStateChange((event, session) => {
+            if (event === 'SIGNED_OUT') {
+                currentUser = null;
+                document.getElementById('admin-panel').style.display = 'none';
+                sessionStorage.removeItem('adminLoggedIn');
+                sessionStorage.removeItem('adminUser');
+                showModule('presenca');
+            } else if (event === 'SIGNED_IN' && session?.user) {
+                currentUser = session.user;
+            }
+        });
     }
 }
 
 function aplicarImagemCabecalho(imagemSrc) {
-    const header = document.querySelector('.header');
-    if (header) {
-        header.style.backgroundImage = `linear-gradient(rgba(0,0,0,0.5), rgba(0,0,0,0.5)), url(${imagemSrc})`;
-        header.style.backgroundSize = 'cover';
-        header.style.backgroundPosition = 'center';
-        header.style.backgroundRepeat = 'no-repeat';
+    const headerImage = document.getElementById('header-cover-image');
+    const headerCover = document.getElementById('header-cover');
+    
+    if (headerImage && headerCover) {
+        headerImage.src = imagemSrc;
+        headerImage.style.display = 'block';
+        headerCover.style.display = 'block';
     }
 }
 
-// ...
-
-// Função para sincronizar dados entre dispositivos
-function iniciarSincronizacao() {
-    // Sincronizar a cada 5 segundos
-    syncInterval = setInterval(async () => {
-        try {
-            await sincronizarDados();
-        } catch (error) {
-            console.error('Erro na sincronização automática:', error);
-        }
-    }, 5000);
-}
-
-async function sincronizarDados() {
-    if (window.databaseService && !window.databaseService.isLocalStorage) {
-        try {
-            // Buscar dados atualizados do banco
-            const dadosAtualizados = await window.databaseService.getParticipants();
+async function carregarDados() {
+    try {
+        if (isSupabaseReady) {
+            // Carregar do Supabase
+            const participantesSupabase = await window.supabaseService.getParticipants();
+            const pesquisasSupabase = await window.supabaseService.getSurveys();
             
-            // Verificar se há diferenças (comparação mais robusta)
-            const participantesAtuais = JSON.stringify(participantes.sort((a, b) => a.id - b.id));
-            const dadosNovos = JSON.stringify(dadosAtualizados.sort((a, b) => a.id - b.id));
+            // Converter formato Supabase para formato local
+            participantes = participantesSupabase.map(p => ({
+                id: p.id,
+                nome: p.name,
+                departamento: p.department || 'Não informado',
+                presente: p.present,
+                horarioCheckIn: p.arrival_time ? new Date(p.arrival_time).toLocaleTimeString() : null
+            }));
             
-            if (participantesAtuais !== dadosNovos) {
-                console.log('🔄 Sincronizando dados... Diferenças detectadas');
-                console.log('📊 Dados atuais:', participantes.length, 'participantes');
-                console.log('📊 Dados do banco:', dadosAtualizados.length, 'participantes');
-                
-                participantes = dadosAtualizados;
-                atualizarListaParticipantes();
-                atualizarIndicadorPresenca();
-                salvarDados();
-                
-                console.log('✅ Sincronização concluída');
+            pesquisas = pesquisasSupabase.map(s => ({
+                participantName: s.participant_name,
+                nps: s.nps_score,
+                qualidade: s.quality_rating,
+                instrutor: s.instructor_rating,
+                comentarios: s.comments || ''
+            }));
+            
+            console.log('✅ Dados carregados do Supabase');
+        } else {
+            // Carregar do localStorage
+            const dadosParticipantes = localStorage.getItem('participantes');
+            const dadosPesquisas = localStorage.getItem('pesquisas');
+            
+            if (dadosParticipantes) {
+                participantes = JSON.parse(dadosParticipantes);
             }
-        } catch (error) {
-            console.error('❌ Erro ao sincronizar dados:', error);
+            
+            if (dadosPesquisas) {
+                pesquisas = JSON.parse(dadosPesquisas);
+            }
+            
+            console.log('📦 Dados carregados do localStorage');
         }
+        
+        // Atualizar interface
+        atualizarListaParticipantes();
+        atualizarIndicadorPresenca();
+        atualizarResultadosPesquisa();
+        carregarImagemCapa();
+        
+    } catch (error) {
+        console.error('Erro ao carregar dados:', error);
+        
+        // Fallback para localStorage em caso de erro
+        const dadosParticipantes = localStorage.getItem('participantes');
+        const dadosPesquisas = localStorage.getItem('pesquisas');
+        
+        if (dadosParticipantes) {
+            participantes = JSON.parse(dadosParticipantes);
+        }
+        
+        if (dadosPesquisas) {
+            pesquisas = JSON.parse(dadosPesquisas);
+        }
+        
+        atualizarListaParticipantes();
+        atualizarIndicadorPresenca();
+        atualizarResultadosPesquisa();
+        carregarImagemCapa();
     }
 }
 
-function pararSincronizacao() {
-    if (syncInterval) {
-        clearInterval(syncInterval);
-        syncInterval = null;
-    }
-}
+// === UTILITÁRIOS ===
+
+// Permitir adicionar participante com Enter
+// DOMContentLoaded duplicado removido - funcionalidades movidas para o primeiro
+
+// === FUNÇÕES DE UPLOAD EXCEL ===
+
+async function processarExcel(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+    
+    const reader = new FileReader();
+    reader.onload = async function(e) {
+        try {
+            const data = new Uint8Array(e.target.result);
+            const workbook = XLSX.read(data, { type: 'array' });
+            
+            // Pegar a primeira planilha
+            const firstSheetName = workbook.SheetNames[0];
+            const worksheet = workbook.Sheets[firstSheetName];
+            
+            // Converter para JSON
+            const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+            
+            // Processar dados
+            let adicionados = 0;
+            let duplicados = 0;
+            let errosSupabase = 0;
+            
+            // Mostrar progresso
+            const progressDiv = document.createElement('div');
